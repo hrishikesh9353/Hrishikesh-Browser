@@ -17,6 +17,7 @@ const api = {
   setResourceControls: (settings) => ipcRenderer.invoke('browser:set-resource-controls', settings),
   setShaderEffect: (effect) => ipcRenderer.invoke('browser:set-shader-effect', effect),
   getHrxAiModels: () => ipcRenderer.invoke('browser:hrx-ai-models'),
+  getHrxAiHistory: () => ipcRenderer.invoke('browser:hrx-ai-history'),
   askHrxAi: (messages, model) => ipcRenderer.invoke('browser:hrx-ai-chat', { messages, model }),
   toggleReaderMode: () => ipcRenderer.invoke('browser:toggle-reader-mode'),
   getTabProcesses: () => ipcRenderer.invoke('browser:get-tab-processes'),

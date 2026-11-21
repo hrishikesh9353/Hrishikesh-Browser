@@ -1059,7 +1059,11 @@ function App() {
     setHrxAiNotice('')
     setHrxAiStatus('Checking local AI…')
     try {
-      const result = await window.api.getHrxAiModels()
+      const [result, savedMessages] = await Promise.all([
+        window.api.getHrxAiModels(),
+        window.api.getHrxAiHistory()
+      ])
+      setHrxAiMessages(Array.isArray(savedMessages) ? savedMessages : [])
       if (result?.ok) {
         const models = result.models || []
         setHrxAiModels(models)
@@ -5395,7 +5399,7 @@ function App() {
                 >
                   ↑
                 </button>
-                <small>Your messages go to the local model on this device.</small>
+                <small>Chats save on this device and go only to your local model.</small>
               </form>
             </div>
           </section>

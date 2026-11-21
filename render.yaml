@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: hrishikesh-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: HRX_AI_URL
+        sync: false
+      - key: HRX_AI_API_KEY
+        sync: false
+      - key: HRX_AI_MODEL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: SUPPORT_ADMIN_EMAILS
+        sync: false

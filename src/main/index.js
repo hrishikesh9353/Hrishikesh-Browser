@@ -9,7 +9,7 @@ import {
   clipboard,
   shell
 } from 'electron'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'fs/promises'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -25,6 +25,7 @@ const downloadSessions = new WeakSet()
 const googleAccountSessions = new WeakSet()
 const googleAccountTimers = new WeakMap()
 const extensionRestorePromises = new WeakMap()
+let hrxAiConversationWrite = Promise.resolve()
 let nextTabId = 1
 let previousCpuSample = null
 let previousNetworkSample = null
@@ -773,6 +774,33 @@ function passwordVaultPath() {
   return join(app.getPath('userData'), 'passwords.enc')
 }
 
+function hrxAiConversationPath() {
+  return join(app.getPath('userData'), 'hrx-ai-conversation.json')
+}
+
+async function readHrxAiConversation() {
+  try {
+    const conversation = JSON.parse(await readFile(hrxAiConversationPath(), 'utf8'))
+    return Array.isArray(conversation) ? conversation : []
+  } catch (error) {
+    if (error.code === 'ENOENT') return []
+    throw error
+  }
+}
+
+function appendHrxAiConversation(messages) {
+  hrxAiConversationWrite = hrxAiConversationWrite.catch(() => {}).then(async () => {
+    const conversation = await readHrxAiConversation().catch(() => [])
+    const nextConversation = [...conversation, ...messages].slice(-200)
+    const folder = app.getPath('userData')
+    const temporaryPath = `${hrxAiConversationPath()}.${randomUUID()}.tmp`
+    await mkdir(folder, { recursive: true })
+    await writeFile(temporaryPath, JSON.stringify(nextConversation), 'utf8')
+    await rename(temporaryPath, hrxAiConversationPath())
+  })
+  return hrxAiConversationWrite
+}
+
 async function readPasswordVault() {
   try {
     const encrypted = await readFile(passwordVaultPath())
@@ -1066,6 +1094,16 @@ app.whenReady().then(() => {
     return data.verticalTabs
   })
 
+  ipcMain.handle('browser:hrx-ai-history', async (event) => {
+    const mainWindow = getTrustedMainWindow(event)
+    if (!mainWindow || browserWindows.get(mainWindow)?.incognito) return []
+    try {
+      return (await readHrxAiConversation()).slice(-200)
+    } catch {
+      return []
+    }
+  })
+
   ipcMain.handle('browser:hrx-ai-models', async (event) => {
     if (!getTrustedMainWindow(event)) return { ok: false, reason: 'Request not allowed.' }
     try {
@@ -1087,7 +1125,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('browser:hrx-ai-chat', async (event, value) => {
-    if (!getTrustedMainWindow(event)) return { ok: false, reason: 'Request not allowed.' }
+    const mainWindow = getTrustedMainWindow(event)
+    if (!mainWindow) return { ok: false, reason: 'Request not allowed.' }
+    const persistConversation = !browserWindows.get(mainWindow)?.incognito
     const model = typeof value?.model === 'string' ? value.model.slice(0, 80) : ''
     const messages = Array.isArray(value?.messages)
       ? value.messages.slice(-20).flatMap((item) => {
@@ -1098,6 +1138,12 @@ app.whenReady().then(() => {
       : []
     if (!model || !messages.length)
       return { ok: false, reason: 'Choose a local model and enter a message.' }
+    const question = [...messages].reverse().find((item) => item.role === 'user')
+    if (persistConversation && question) {
+      await appendHrxAiConversation([
+        { role: 'user', content: question.content, createdAt: new Date().toISOString() }
+      ]).catch(() => {})
+    }
     try {
       const response = await fetch('http://127.0.0.1:11434/api/chat', {
         method: 'POST',
@@ -1108,7 +1154,13 @@ app.whenReady().then(() => {
       const data = await response.json().catch(() => ({}))
       if (!response.ok)
         return { ok: false, reason: data.error || 'The local model could not answer.' }
-      return { ok: true, answer: data.message?.content || 'The model returned an empty answer.' }
+      const answer = data.message?.content || 'The model returned an empty answer.'
+      if (persistConversation) {
+        await appendHrxAiConversation([
+          { role: 'assistant', content: answer, model, createdAt: new Date().toISOString() }
+        ]).catch(() => {})
+      }
+      return { ok: true, answer }
     } catch {
       return {
         ok: false,
