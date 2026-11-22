@@ -7,6 +7,9 @@ const api = {
   copyText: (text) => ipcRenderer.invoke('browser:copy-text', text),
   getGoogleAccountState: () => ipcRenderer.invoke('browser:get-google-account-state'),
   signOutGoogle: () => ipcRenderer.invoke('browser:sign-out-google'),
+  openGoogleOAuth: (url) => ipcRenderer.invoke('browser:open-google-oauth', url),
+  takeAuthCallback: () => ipcRenderer.invoke('browser:take-auth-callback'),
+  acknowledgeAuthCallback: (url) => ipcRenderer.invoke('browser:ack-auth-callback', url),
   setPopupOpen: (open) => ipcRenderer.invoke('browser:set-popup-open', open),
   setAddressSuggestionsOpen: (open) =>
     ipcRenderer.invoke('browser:set-address-suggestions-open', open),
@@ -99,6 +102,11 @@ const api = {
     const listener = (_event, state) => callback(state)
     ipcRenderer.on('browser:google-account-state', listener)
     return () => ipcRenderer.removeListener('browser:google-account-state', listener)
+  },
+  onAuthCallback: (callback) => {
+    const listener = (_event, url) => callback(url)
+    ipcRenderer.on('browser:auth-callback', listener)
+    return () => ipcRenderer.removeListener('browser:auth-callback', listener)
   }
 }
 

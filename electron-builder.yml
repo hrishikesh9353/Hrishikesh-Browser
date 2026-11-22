@@ -1,5 +1,9 @@
 appId: com.hrishikesh.browser
 productName: Hrishikesh
+protocols:
+  - name: Hrishikesh Account Sign In
+    schemes:
+      - hrishikesh
 directories:
   buildResources: build
 files:

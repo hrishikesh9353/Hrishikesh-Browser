@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
+import { supabase, supabaseAuthConfigured } from './auth/supabase'
 import browserMark from '../../../build/icon.svg'
 import homeWordmark from './assets/hrishikesh-wordmark.png'
 import gxWallpaper from './assets/hrishikesh-gx-wallpaper.png'
@@ -196,6 +197,9 @@ function App() {
   const [homeAppsOpen, setHomeAppsOpen] = useState(false)
   const [homeProfileOpen, setHomeProfileOpen] = useState(false)
   const [googleSignedIn, setGoogleSignedIn] = useState(false)
+  const [hrxAccountUser, setHrxAccountUser] = useState(null)
+  const [accountAuthBusy, setAccountAuthBusy] = useState(false)
+  const handledAuthCallbacksRef = useRef(new Set())
   const [accountPageTabId, setAccountPageTabId] = useState(null)
   const [helpPageTabId, setHelpPageTabId] = useState(null)
   const [hrxAiPageTabId, setHrxAiPageTabId] = useState(null)
@@ -225,7 +229,6 @@ function App() {
       return []
     }
   })
-  const [accountEmail, setAccountEmail] = useState('')
   const [accountConnectMessage, setAccountConnectMessage] = useState('')
   const [verticalTabs, setVerticalTabs] = useState(false)
   const [readerMode, setReaderMode] = useState(false)
@@ -468,6 +471,86 @@ function App() {
     window.api.getGoogleAccountState().then(applyGoogleAccountState)
     return unsubscribe
   }, [])
+
+  useEffect(() => {
+    if (!supabase) return undefined
+    let mounted = true
+    const processAuthCallback = async (callbackUrl) => {
+      if (typeof callbackUrl !== 'string') return
+      try {
+        const callback = new URL(callbackUrl)
+        const query = callback.searchParams
+        const hash = new URLSearchParams(callback.hash.replace(/^#/, ''))
+        const errorText = query.get('error_description') || hash.get('error_description')
+        if (errorText) {
+          if (mounted) setAccountConnectMessage(decodeURIComponent(errorText.replace(/\+/g, ' ')))
+          return
+        }
+        const code = query.get('code')
+        if (!code) {
+          if (mounted) setAccountConnectMessage('Google sign-in did not return a login code. Try again.')
+          return
+        }
+        if (handledAuthCallbacksRef.current.has(code)) return
+        handledAuthCallbacksRef.current.add(code)
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error && mounted) setAccountConnectMessage(error.message)
+      } catch {
+        if (mounted) setAccountConnectMessage('Could not finish Google sign-in. Please try again.')
+      } finally {
+        void window.api.acknowledgeAuthCallback(callbackUrl)
+      }
+    }
+
+    const unsubscribe = window.api.onAuthCallback(processAuthCallback)
+    window.api.takeAuthCallback().then((callbackUrl) => {
+      if (callbackUrl) void processAuthCallback(callbackUrl)
+    })
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      setHrxAccountUser(session?.user || null)
+      if (session?.user) {
+        setAccountConnectMessage(`Signed in as ${session.user.email || 'your Google account'}.`)
+        setAccountPageTabId(null)
+      }
+    })
+    supabase.auth.getSession().then(({ data: sessionData, error }) => {
+      if (mounted && !error) setHrxAccountUser(sessionData.session?.user || null)
+    })
+
+    return () => {
+      mounted = false
+      unsubscribe()
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  const signInToHrishikeshWithGoogle = async () => {
+    if (!supabase || !supabaseAuthConfigured) {
+      setAccountConnectMessage('Supabase sign-in is not configured in this app build yet.')
+      return
+    }
+    setAccountAuthBusy(true)
+    setAccountConnectMessage('Opening secure Google sign-in…')
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: 'hrishikesh://auth/callback',
+          skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' }
+        }
+      })
+      if (error) throw error
+      const opened = await window.api.openGoogleOAuth(data.url)
+      if (!opened?.ok) throw new Error('Could not open Google sign-in.')
+      setAccountConnectMessage('Finish Google sign-in in the browser window that just opened.')
+    } catch (error) {
+      setAccountConnectMessage(error?.message || 'Could not start Google sign-in. Try again.')
+    } finally {
+      setAccountAuthBusy(false)
+    }
+  }
 
   useEffect(() => {
     window.api.getAppVersion().then(setAppVersion)
@@ -2235,46 +2318,64 @@ function App() {
                     )}
                     {browserMenuView === 'account' && (
                       <div className="browser-menu-form">
-                        {googleSignedIn ? (
+                        {hrxAccountUser || googleSignedIn ? (
                           <>
                             <div className="browser-account-status">
                               <span>H</span>
                               <div>
                                 <strong>Hrishikesh Account</strong>
-                                <small>Local browser profile · Google websites connected</small>
+                                <small>
+                                  {hrxAccountUser
+                                    ? `Signed in as ${hrxAccountUser.email || 'Google account'}`
+                                    : 'Local browser profile · Google websites connected'}
+                                </small>
                               </div>
-                              <em>On this device</em>
+                              <em>{hrxAccountUser ? 'Signed in' : 'On this device'}</em>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigate('https://myaccount.google.com/')
-                                setBrowserMenuOpen(false)
-                              }}
-                            >
-                              Manage Google website sign-in
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await window.api.signOutGoogle()
-                                setGoogleSignedIn(false)
-                              }}
-                            >
-                              Sign out of Google
-                            </button>
+                            {hrxAccountUser && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase?.auth.signOut()
+                                  setHrxAccountUser(null)
+                                  setBrowserMenuOpen(false)
+                                }}
+                              >
+                                Sign out of Hrishikesh
+                              </button>
+                            )}
+                            {googleSignedIn && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigate('https://myaccount.google.com/')
+                                    setBrowserMenuOpen(false)
+                                  }}
+                                >
+                                  Manage Google website sign-in
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await window.api.signOutGoogle()
+                                    setGoogleSignedIn(false)
+                                  }}
+                                >
+                                  Sign out of Google websites
+                                </button>
+                              </>
+                            )}
                           </>
                         ) : (
                           <>
                             <p>
-                              Your browser profile is saved on this device. Account sign-in will be
-                              connected with the other services later.
+                              Sign in with Google to connect a Hrishikesh Account.
                             </p>
                             <button
                               type="button"
                               onClick={() => {
                                 setBrowserMenuOpen(false)
-                                setAccountEmail('')
                                 setAccountConnectMessage('')
                                 setHelpPageTabId(null)
                                 setAccountPageTabId(activeTabId)
@@ -2752,7 +2853,6 @@ function App() {
                         onClick={() => {
                           setBrowserMenuOpen(false)
                           setBrowserMenuView('')
-                          setAccountEmail('')
                           setAccountConnectMessage('')
                           setHelpPageTabId(null)
                           setAccountPageTabId(activeTabId)
@@ -3251,7 +3351,7 @@ function App() {
                 )}
               </svg>
             </button>
-            {googleSignedIn ? (
+            {hrxAccountUser || googleSignedIn ? (
               <button
                 className="home-profile-button home-google-account-button"
                 type="button"
@@ -3274,6 +3374,7 @@ function App() {
             {homeMailOpen && (
               <div className="home-mail-menu">
                 <strong>Choose your mail</strong>
+                <small className="home-mail-note">Google sign-in opens in your default browser for account security.</small>
                 <div className="home-mail-providers">
                   {[
                     ['Gmail', 'https://mail.google.com/'],
@@ -3359,10 +3460,24 @@ function App() {
                 </span>
                 <strong>Hrishikesh Account</strong>
                 <small>
-                  {googleSignedIn
-                    ? 'Your browser profile is saved on this device. Google websites are signed in separately.'
-                    : 'Your browser profile is saved on this device. Online account sign-in and sync are not connected yet.'}
+                  {hrxAccountUser
+                    ? `Signed in to Hrishikesh as ${hrxAccountUser.email || 'your Google account'}.`
+                    : googleSignedIn
+                      ? 'Your browser profile is saved on this device. Google websites are signed in separately.'
+                      : 'Your browser profile is saved on this device. Sign in to a Hrishikesh Account to connect your profile.'}
                 </small>
+                {hrxAccountUser && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await supabase?.auth.signOut()
+                      setHrxAccountUser(null)
+                      setHomeProfileOpen(false)
+                    }}
+                  >
+                    Sign out of Hrishikesh
+                  </button>
+                )}
                 {googleSignedIn && (
                   <button
                     type="button"
@@ -3372,6 +3487,18 @@ function App() {
                     }}
                   >
                     Manage Google website sign-in
+                  </button>
+                )}
+                {!hrxAccountUser && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHomeProfileOpen(false)
+                      setAccountConnectMessage('')
+                      setAccountPageTabId(activeTabId)
+                    }}
+                  >
+                    Sign in to Hrishikesh
                   </button>
                 )}
               </div>
@@ -4795,62 +4922,50 @@ function App() {
               <span>HRISHIKESH</span>
               <i>ACCOUNT</i>
             </div>
-            <form
-              className="hrx-account-card"
-              onSubmit={(event) => {
-                event.preventDefault()
-                setAccountConnectMessage(
-                  'Account service will be connected with the other sign-in options later. Your email was not sent.'
-                )
-              }}
-            >
-              <div className="hrx-account-card-brand">HRX</div>
-              <h1>Let’s start with your email</h1>
-              <p>Use one Hrishikesh Account across your browser devices.</p>
-              <label htmlFor="hrx-account-email">Email</label>
-              <input
-                id="hrx-account-email"
-                autoComplete="email"
-                type="email"
-                placeholder="Email address"
-                value={accountEmail}
-                onChange={(event) => {
-                  setAccountEmail(event.target.value)
-                  setAccountConnectMessage('')
-                }}
-                required
-              />
-              <button className="hrx-account-continue" type="submit">
-                Continue
-              </button>
-              <div className="hrx-account-divider">
-                <span>or continue with</span>
-              </div>
-              <div className="hrx-account-providers">
-                {['Google', 'Facebook', 'Apple'].map((provider) => (
-                  <button
-                    type="button"
-                    key={provider}
-                    onClick={() =>
-                      setAccountConnectMessage(
-                        `${provider} sign-in will be connected when account services are set up.`
-                      )
+            {hrxAccountUser ? (
+              <div className="hrx-account-card">
+                <div className="hrx-account-card-brand">HRX</div>
+                <h1>You’re signed in</h1>
+                <p>{hrxAccountUser.email || 'Your Google account'} is connected to Hrishikesh.</p>
+                <button
+                  className="hrx-account-continue"
+                  type="button"
+                  onClick={async () => {
+                    const { error } = await supabase.auth.signOut()
+                    if (error) setAccountConnectMessage(error.message)
+                    else {
+                      setHrxAccountUser(null)
+                      setAccountConnectMessage('Signed out of Hrishikesh.')
                     }
-                  >
-                    {provider}
-                  </button>
-                ))}
+                  }}
+                >
+                  Sign out
+                </button>
               </div>
-              {accountConnectMessage && (
-                <p className="hrx-account-connect-message" role="status">
-                  {accountConnectMessage}
-                </p>
-              )}
-              <small className="hrx-account-local-note">
-                Sign-in options are ready for connection. Your browser data stays on this device
-                until account sync is set up.
-              </small>
-            </form>
+            ) : (
+              <div className="hrx-account-card">
+                <div className="hrx-account-card-brand">HRX</div>
+                <h1>Sign in to Hrishikesh</h1>
+                <p>Use your Google account to sign in to your Hrishikesh profile.</p>
+                <button
+                  className="hrx-account-continue"
+                  type="button"
+                  disabled={accountAuthBusy}
+                  onClick={signInToHrishikeshWithGoogle}
+                >
+                  {accountAuthBusy ? 'Opening Google…' : 'Continue with Google'}
+                </button>
+                {accountConnectMessage && (
+                  <p className="hrx-account-connect-message" role="status">
+                    {accountConnectMessage}
+                  </p>
+                )}
+                <small className="hrx-account-local-note">
+                  Google sign-in opens in your default browser and returns here after approval. Your
+                  browser data stays on this device until sync is enabled.
+                </small>
+              </div>
+            )}
           </section>
         )}
         {helpPageTabId === activeTabId && helpPageTabId !== null && (

@@ -1,4 +1,26 @@
 import http from 'node:http'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+function loadLocalEnvironment() {
+  try {
+    const envPath = new URL('./.env.local', import.meta.url)
+    const contents = readFileSync(fileURLToPath(envPath), 'utf8')
+    for (const line of contents.split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/)
+      if (!match || process.env[match[1]] !== undefined) continue
+      let value = match[2]
+      if ((value.startsWith('\"') && value.endsWith('\"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1)
+      }
+      process.env[match[1]] = value
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+}
+
+loadLocalEnvironment()
 
 const port = Number(process.env.PORT) || 3000
 const host = process.env.HOST || '0.0.0.0'
@@ -49,8 +71,8 @@ async function readBody(request) {
 function configured() {
   return Boolean(
     process.env.SUPABASE_URL &&
-      process.env.SUPABASE_ANON_KEY &&
-      process.env.SUPABASE_SERVICE_ROLE_KEY
+      process.env.SUPABASE_PUBLISHABLE_KEY &&
+      process.env.SUPABASE_SECRET_KEY
   )
 }
 
@@ -62,8 +84,8 @@ async function supabaseRequest(path, options = {}) {
   const response = await fetch(supabaseUrl(path), {
     ...options,
     headers: {
-      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: process.env.SUPABASE_SECRET_KEY,
+      authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
       'content-type': 'application/json',
       ...(options.headers || {})
     },
@@ -79,7 +101,7 @@ async function authenticate(request) {
   if (!token) return null
   const response = await fetch(supabaseUrl('/auth/v1/user'), {
     headers: {
-      apikey: process.env.SUPABASE_ANON_KEY,
+      apikey: process.env.SUPABASE_PUBLISHABLE_KEY,
       authorization: `Bearer ${token}`
     },
     signal: AbortSignal.timeout(8000)

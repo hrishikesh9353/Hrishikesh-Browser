@@ -574,6 +574,14 @@ textarea:focus-visible {
   color: var(--gx-muted);
 }
 
+.home-mail-note {
+  display: block;
+  margin: 5px 0 9px;
+  color: var(--gx-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .welcome-panel {
   width: min(960px, 100%);
   min-height: 0;
@@ -2936,9 +2944,9 @@ textarea:focus-visible {
 .hrx-ai-brand { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 900; letter-spacing: .13em; }
 .hrx-ai-brand img { width: 24px; height: 24px; object-fit: contain; }
 .hrx-ai-brand i { color: #08d8e6; font-size: 10px; font-style: normal; }
-.hrx-ai-header-status { display: flex; align-items: center; gap: 7px; margin-left: auto; color: #9692a1; font-size: 9px; letter-spacing: .08em; }
-.hrx-ai-header-status > span { width: 7px; height: 7px; border-radius: 50%; background: #ff496b; box-shadow: 0 0 9px #ff496b88; }
-.hrx-ai-header-status > span.connected { background: #27e8ad; box-shadow: 0 0 9px #27e8ad88; }
+.hrx-ai-header-status { display: flex; align-items: center; gap: 9px; margin-left: auto; padding: 9px 13px; border: 1px solid #27e8ad66; border-radius: 999px; color: #bafde7; background: #27e8ad18; font-size: 11px; font-weight: 800; letter-spacing: .08em; box-shadow: 0 0 18px #27e8ad18; }
+.hrx-ai-header-status > span { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #ff496b; box-shadow: 0 0 9px #ff496b88; }
+.hrx-ai-header-status > span.connected { background: #27e8ad; box-shadow: 0 0 10px #27e8ad; }
 .hrx-ai-topbar > button { border: 1px solid #ffffff1f; border-radius: 6px; padding: 7px 10px; color: #eeeaf2; background: #15151c; cursor: pointer; }
 .hrx-ai-topbar > button span { margin-left: 6px; color: #aaa5b3; font-size: 10px; }
 .hrx-ai-shell { display: flex; width: min(850px,calc(100% - 32px)); min-height: 0; flex: 1; flex-direction: column; align-self: center; padding: 30px 0 22px; }

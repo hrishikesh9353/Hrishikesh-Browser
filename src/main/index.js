@@ -13,7 +13,7 @@ import { mkdir, readFile, rename, writeFile } from 'fs/promises'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -32,6 +32,50 @@ let previousNetworkSample = null
 let thermalSampleAt = 0
 let thermalSample = null
 app.setName('Hrishikesh')
+
+const authCallbackScheme = 'hrishikesh:'
+let pendingAuthCallback = process.argv.find((value) => isAuthCallbackUrl(value)) || ''
+
+function isAuthCallbackUrl(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === authCallbackScheme && url.hostname === 'auth' && url.pathname === '/callback'
+  } catch {
+    return false
+  }
+}
+
+function queueAuthCallback(value) {
+  if (!isAuthCallbackUrl(value)) return false
+  pendingAuthCallback = value
+  const mainWindow = [...browserWindows.keys()].find(
+    (window) => !window.isDestroyed() && !browserWindows.get(window)?.incognito
+  )
+  if (mainWindow && !mainWindow.webContents.isLoadingMainFrame()) {
+    mainWindow.webContents.send('browser:auth-callback', value)
+  }
+  return true
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    const callbackUrl = commandLine.find((value) => isAuthCallbackUrl(value))
+    if (callbackUrl) queueAuthCallback(callbackUrl)
+    const mainWindow = [...browserWindows.keys()].find((window) => !window.isDestroyed())
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+  app.on('open-url', (event, value) => {
+    event.preventDefault()
+    queueAuthCallback(value)
+  })
+}
 
 const shaderStyles = {
   none: '',
@@ -180,6 +224,18 @@ function normalizeWebAddress(value) {
     return ['https:'].includes(parsed.protocol) ? parsed.href : null
   } catch {
     return null
+  }
+}
+
+function isGoogleSignInUrl(value) {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      ['mail.google.com', 'accounts.google.com'].includes(url.hostname.toLowerCase())
+    )
+  } catch {
+    return false
   }
 }
 
@@ -572,7 +628,12 @@ async function ensureTabView(mainWindow, tab) {
       event.preventDefault()
     }
   })
-  view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    if (isGoogleSignInUrl(url)) {
+      void shell.openExternal(url).catch(() => {})
+    }
+    return { action: 'deny' }
+  })
   return view
 }
 
@@ -973,6 +1034,9 @@ function createWindow({ incognito = false } = {}) {
   mainWindow.webContents.on('did-finish-load', () => {
     const data = browserWindows.get(mainWindow)
     if (data) sendGoogleAccountState(getBrowserSession(mainWindow))
+    if (pendingAuthCallback && !data?.incognito) {
+      mainWindow.webContents.send('browser:auth-callback', pendingAuthCallback)
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -983,6 +1047,12 @@ function createWindow({ incognito = false } = {}) {
 }
 
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('hrishikesh', process.execPath, [resolve(process.argv[1])])
+  } else {
+    app.setAsDefaultProtocolClient('hrishikesh')
+  }
   electronApp.setAppUserModelId('com.hrishikesh.browser')
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
 
@@ -1009,6 +1079,38 @@ app.whenReady().then(() => {
   ipcMain.handle('browser:get-state', (event) => {
     const mainWindow = getTrustedMainWindow(event)
     return mainWindow ? getWindowState(mainWindow) : null
+  })
+
+  ipcMain.handle('browser:open-google-oauth', async (event, value) => {
+    if (!getTrustedMainWindow(event) || typeof value !== 'string') return { ok: false }
+    try {
+      const url = new URL(value)
+      if (
+        url.origin !== 'https://srhbpyftypduiveeqzeq.supabase.co' ||
+        url.pathname !== '/auth/v1/authorize' ||
+        url.searchParams.get('provider') !== 'google' ||
+        url.searchParams.get('redirect_to') !== 'hrishikesh://auth/callback'
+      ) {
+        return { ok: false }
+      }
+      await shell.openExternal(url.href)
+      return { ok: true }
+    } catch {
+      return { ok: false }
+    }
+  })
+
+  ipcMain.handle('browser:take-auth-callback', (event) => {
+    if (!getTrustedMainWindow(event)) return ''
+    const callbackUrl = pendingAuthCallback
+    pendingAuthCallback = ''
+    return callbackUrl
+  })
+
+  ipcMain.handle('browser:ack-auth-callback', (event, value) => {
+    if (!getTrustedMainWindow(event) || typeof value !== 'string') return false
+    if (pendingAuthCallback === value) pendingAuthCallback = ''
+    return true
   })
 
   ipcMain.handle('browser:set-window-title', (event, value) => {
@@ -1683,6 +1785,15 @@ app.whenReady().then(() => {
     const mainWindow = getTrustedMainWindow(event)
     const tab = mainWindow && getActiveTab(mainWindow)
     if (!destination || !mainWindow || !tab) return { ok: false }
+
+    if (isGoogleSignInUrl(destination)) {
+      try {
+        await shell.openExternal(destination)
+        return { ok: true, url: destination, external: true }
+      } catch {
+        return { ok: false }
+      }
+    }
 
     const view = await ensureTabView(mainWindow, tab)
     tab.showingHome = false
