@@ -49,7 +49,7 @@ Build and launch the Android app from Android Studio on an emulator or device. E
 
 HRX AI connects to an Ollama service running on this computer at `http://127.0.0.1:11434`. Install Ollama and download a model before using the chat. Prompts are sent to that local service; this project does not include a hosted AI service or model weights. Text responses stream from Ollama and can be stopped. Chat titles, pinning, search, and persona settings are saved locally in this browser profile. Generated fenced code has copy/save controls and a sandboxed HTML/JavaScript preview. Text and code file attachments are sent to the local model; images require a vision model, for example `ollama pull llama3.2-vision`.
 
-AI limitations: Supabase conversation sync, PDF text extraction, regenerate, and persistent image attachments are not implemented. Image analysis was not run in this environment because no vision model is installed. Local text streaming was verified against the installed Ollama service; the desktop UI path was not end-to-end exercised in this phase.
+AI limitations: Supabase conversation sync, PDF text extraction, regenerate, and persistent image attachments are not implemented. Image analysis was not run in this environment because no vision model is installed. Ollama availability was checked, but the streaming chat UI was not end-to-end exercised in this phase.
 
 The optional AI Agent mode is off by default. When enabled, the AI can propose only `open_tab`, HTTP/HTTPS `navigate`, `add_bookmark`, `add_shortcut`, `set_theme`, `switch_workspace`, `screenshot`, or `save_code`. The user must click to review a proposal, and settings/bookmark/shortcut/file changes request confirmation. It cannot execute shell commands or delete data. Actions are logged locally. Agent actions are suggestion-driven; the model does not run app commands silently.
 
@@ -57,7 +57,7 @@ The optional AI Agent mode is off by default. When enabled, the AI can propose o
 
 The Electron main process is the local backend for the desktop app. It keeps browser preferences, shortcuts, bookmarks, and HRX AI conversation history in Electron's per-user data folder. AI chat history is limited to the latest 200 messages; incognito windows do not read or save that history. Passwords use Electron's operating-system encryption when it is available, and browser site data uses a persistent Chromium profile.
 
-This local backend does not sync data to GitHub or another computer. A shared service for other users needs a hosted API, database, and account authentication; none are configured in this repository yet.
+The hosted API is deployed at `https://hrishikesh-api.onrender.com` and its health check reports the database configured. The desktop app's local preferences and HRX AI conversations are not yet synced through that API, and hosted AI is not configured.
 
 For the Node backend, copy `backend/.env.example` to `backend/.env.local` and fill it locally. `.env.local` and other environment files are ignored by Git and excluded from the Windows package. On Render, set those values in the service's Environment dashboard; never put the Supabase secret key in source or a committed `.env` file. Authenticated API endpoints verify the Supabase bearer token before accessing account data or hosted AI.
 
