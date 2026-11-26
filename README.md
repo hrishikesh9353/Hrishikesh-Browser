@@ -34,3 +34,9 @@ This local backend does not sync data to GitHub or another computer. A shared se
 - Preferences and HRX AI chat history stay on this device.
 - Cross-device account sync and hosted AI are not configured.
 - Windows may show a security warning for an unsigned installer. A code-signing setup is not included.
+
+## Original interface audio
+
+The browser's own interface uses short Web Audio tones for clicks, pointer hover, keyboard focus, and navigation-key feedback. The home-page wordmark has a brief original launch animation. Sound effects, launch cue, and hover cues have separate saved switches; the volume slider and preview are in Mods → Interface & sound. These controls do not inject audio into websites opened in browser tabs.
+
+Browsers and embedded web views generally require a user gesture before audio can play. For that reason, the launch cue is queued until the first pointer or keyboard interaction after opening the app. Web Audio may also be unavailable or muted by operating-system/device settings; the interface continues to work without sound. Reduced-motion preferences disable the wordmark animation.

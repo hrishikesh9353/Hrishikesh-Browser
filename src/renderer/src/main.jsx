@@ -2,10 +2,22 @@ import './assets/main.css'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App'
+import StandaloneHome from './StandaloneHome'
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-)
+const root = createRoot(document.getElementById('root'))
+
+if (window.api) {
+  import('./App').then(({ default: App }) => {
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    )
+  })
+} else {
+  root.render(
+    <StrictMode>
+      <StandaloneHome />
+    </StrictMode>
+  )
+}

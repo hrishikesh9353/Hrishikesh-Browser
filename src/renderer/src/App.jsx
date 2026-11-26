@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import PropTypes from 'prop-types'
 import QRCode from 'qrcode'
 import { supabase, supabaseAuthConfigured } from './auth/supabase'
 import browserMark from '../../../build/icon.svg'
@@ -168,6 +169,88 @@ function GxMeter({ label, value, display, unit = '' }) {
   )
 }
 
+function AccountAvatar({ user, className = '' }) {
+  const metadata = user?.user_metadata || {}
+  const identity = user?.identities?.find((item) => item.provider === 'google')?.identity_data || {}
+  const photoUrl = [
+    metadata.avatar_url,
+    metadata.picture,
+    identity.avatar_url,
+    identity.picture
+  ].find((value) => typeof value === 'string' && value.startsWith('https://'))
+  const name =
+    metadata.full_name || metadata.name || identity.full_name || identity.name || 'Hrishikesh'
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState('')
+  const imageFailed = Boolean(photoUrl && failedPhotoUrl === photoUrl)
+
+  return (
+    <span className={className} aria-hidden="true">
+      {photoUrl && !imageFailed ? (
+        <img
+          className="home-account-avatar-image"
+          src={photoUrl}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => setFailedPhotoUrl(photoUrl)}
+        />
+      ) : (
+        name.slice(0, 1).toUpperCase()
+      )}
+    </span>
+  )
+}
+
+AccountAvatar.propTypes = {
+  user: PropTypes.shape({
+    user_metadata: PropTypes.shape({
+      avatar_url: PropTypes.string,
+      picture: PropTypes.string,
+      full_name: PropTypes.string,
+      name: PropTypes.string
+    }),
+    identities: PropTypes.arrayOf(
+      PropTypes.shape({
+        provider: PropTypes.string,
+        identity_data: PropTypes.shape({
+          avatar_url: PropTypes.string,
+          picture: PropTypes.string,
+          full_name: PropTypes.string,
+          name: PropTypes.string
+        })
+      })
+    )
+  }),
+  className: PropTypes.string
+}
+
+function WebsiteFavicon({ url, name }) {
+  const [failedFaviconUrl, setFailedFaviconUrl] = useState('')
+  // Ask Chromium's favicon service for this exact app URL. alt=404 prevents
+  // unrelated Google letter/globe fallbacks from being shown as an app logo.
+  const faviconUrl = `https://s2.googleusercontent.com/s2/favicons?domain_url=${encodeURIComponent(url)}&alt=404&sz=128`
+
+  const failed = failedFaviconUrl === faviconUrl
+
+  return (
+    <span className="google-app-icon" aria-label={`${name} logo`}>
+      {!failed && (
+        <img
+          src={faviconUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailedFaviconUrl(faviconUrl)}
+        />
+      )}
+    </span>
+  )
+}
+
+WebsiteFavicon.propTypes = {
+  url: PropTypes.string.isRequired,
+  name: PropTypes.string.isRequired
+}
+
 function App() {
   const addressInputRef = useRef(null)
   const bookmarkImportRef = useRef(null)
@@ -198,6 +281,7 @@ function App() {
   const [homeProfileOpen, setHomeProfileOpen] = useState(false)
   const [googleSignedIn, setGoogleSignedIn] = useState(false)
   const [hrxAccountUser, setHrxAccountUser] = useState(null)
+  const [hrxAccountReady, setHrxAccountReady] = useState(false)
   const [accountAuthBusy, setAccountAuthBusy] = useState(false)
   const handledAuthCallbacksRef = useRef(new Set())
   const [accountPageTabId, setAccountPageTabId] = useState(null)
@@ -221,6 +305,17 @@ function App() {
   const [modsSoundVolume, setModsSoundVolume] = useState(() =>
     Number(window.localStorage.getItem('hrx-mod-volume') || 35)
   )
+  const [interfaceSoundsEnabled, setInterfaceSoundsEnabled] = useState(
+    () => window.localStorage.getItem('hrx-interface-sounds') !== 'off'
+  )
+  const [hoverSoundsEnabled, setHoverSoundsEnabled] = useState(
+    () => window.localStorage.getItem('hrx-hover-sounds') === 'on'
+  )
+  const [startupSoundEnabled, setStartupSoundEnabled] = useState(
+    () => window.localStorage.getItem('hrx-startup-sound') !== 'off'
+  )
+  const interfaceAudioRef = useRef(null)
+  const startupSoundPlayedRef = useRef(false)
   const [userMods, setUserMods] = useState(() => {
     try {
       const saved = JSON.parse(window.localStorage.getItem('hrx-user-mods') || '[]')
@@ -488,16 +583,28 @@ function App() {
         }
         const code = query.get('code')
         if (!code) {
-          if (mounted) setAccountConnectMessage('Google sign-in did not return a login code. Try again.')
+          if (mounted)
+            setAccountConnectMessage('Google sign-in did not return a login code. Try again.')
           return
         }
         if (handledAuthCallbacksRef.current.has(code)) return
         handledAuthCallbacksRef.current.add(code)
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error && mounted) setAccountConnectMessage(error.message)
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) throw error
+        if (mounted) {
+          setHrxAccountUser(data.session?.user || null)
+          setHrxAccountReady(true)
+          if (data.session?.user) {
+            setAccountConnectMessage(
+              `Signed in as ${data.session.user.email || 'your Google account'}.`
+            )
+            setAccountPageTabId(null)
+          }
+        }
       } catch {
         if (mounted) setAccountConnectMessage('Could not finish Google sign-in. Please try again.')
       } finally {
+        if (mounted) setHrxAccountReady(true)
         void window.api.acknowledgeAuthCallback(callbackUrl)
       }
     }
@@ -509,14 +616,23 @@ function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return
       setHrxAccountUser(session?.user || null)
+      setHrxAccountReady(true)
       if (session?.user) {
         setAccountConnectMessage(`Signed in as ${session.user.email || 'your Google account'}.`)
         setAccountPageTabId(null)
       }
     })
-    supabase.auth.getSession().then(({ data: sessionData, error }) => {
-      if (mounted && !error) setHrxAccountUser(sessionData.session?.user || null)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data: sessionData, error }) => {
+        if (mounted) {
+          if (!error) setHrxAccountUser(sessionData.session?.user || null)
+          setHrxAccountReady(true)
+        }
+      })
+      .catch(() => {
+        if (mounted) setHrxAccountReady(true)
+      })
 
     return () => {
       mounted = false
@@ -1215,6 +1331,109 @@ function App() {
       /* Audio is optional when the device blocks playback. */
     }
   }
+
+  const playInterfaceTone = useCallback(
+    (kind = 'click') => {
+      if (!interfaceSoundsEnabled) return
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext
+        if (!AudioContextClass) return
+        const context = interfaceAudioRef.current || new AudioContextClass()
+        interfaceAudioRef.current = context
+        if (context.state === 'suspended') void context.resume()
+        const now = context.currentTime
+        const frequencies =
+          kind === 'startup' ? [392, 523.25, 659.25] : kind === 'hover' ? [740] : [587, 784]
+        frequencies.forEach((frequency, index) => {
+          const oscillator = context.createOscillator()
+          const gain = context.createGain()
+          const start = now + index * (kind === 'startup' ? 0.075 : 0.018)
+          const duration = kind === 'startup' ? 0.15 : kind === 'hover' ? 0.035 : 0.07
+          oscillator.type = 'sine'
+          oscillator.frequency.setValueAtTime(frequency, start)
+          gain.gain.setValueAtTime(0.0001, start)
+          gain.gain.exponentialRampToValueAtTime(
+            Math.max(0.0002, (modsSoundVolume / 100) * (kind === 'hover' ? 0.009 : 0.022)),
+            start + 0.008
+          )
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+          oscillator.connect(gain)
+          gain.connect(context.destination)
+          oscillator.start(start)
+          oscillator.stop(start + duration + 0.01)
+        })
+      } catch {
+        // Audio feedback is optional on devices that do not expose Web Audio.
+      }
+    },
+    [interfaceSoundsEnabled, modsSoundVolume]
+  )
+
+  useEffect(() => {
+    if (!startupSoundEnabled || !interfaceSoundsEnabled || startupSoundPlayedRef.current) return
+    const playStartupOnce = () => {
+      if (startupSoundPlayedRef.current) return
+      startupSoundPlayedRef.current = true
+      playInterfaceTone('startup')
+      window.removeEventListener('pointerdown', playStartupOnce, true)
+      window.removeEventListener('keydown', playStartupOnce, true)
+    }
+    // Browsers block audio before a user gesture. Start on the first interaction
+    // so the launch cue is audible without violating autoplay rules.
+    window.addEventListener('pointerdown', playStartupOnce, true)
+    window.addEventListener('keydown', playStartupOnce, true)
+    return () => {
+      window.removeEventListener('pointerdown', playStartupOnce, true)
+      window.removeEventListener('keydown', playStartupOnce, true)
+    }
+  }, [startupSoundEnabled, interfaceSoundsEnabled, playInterfaceTone])
+
+  useEffect(() => {
+    if (!interfaceSoundsEnabled) return undefined
+    let lastHoverAt = 0
+    let lastKeyboardAt = 0
+    const onClick = (event) => {
+      if (event.target.closest('button, a, [role="button"], input[type="checkbox"]')) {
+        playInterfaceTone('click')
+      }
+    }
+    const onFocusIn = (event) => {
+      const focusableControl = event.target.matches('button, a, [role="button"], input, select')
+      if (!hoverSoundsEnabled || !focusableControl) return
+      const now = performance.now()
+      if (now - lastKeyboardAt < 100) return
+      lastKeyboardAt = now
+      playInterfaceTone('hover')
+    }
+    const onKeyDown = (event) => {
+      if (
+        !hoverSoundsEnabled ||
+        !['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)
+      )
+        return
+      const now = performance.now()
+      if (now - lastKeyboardAt < 100) return
+      lastKeyboardAt = now
+      playInterfaceTone('hover')
+    }
+    const onPointerOver = (event) => {
+      if (!hoverSoundsEnabled || !event.target.closest('button, a, [role="button"]')) return
+      const now = performance.now()
+      if (now - lastHoverAt < 90) return
+      lastHoverAt = now
+      playInterfaceTone('hover')
+    }
+    document.addEventListener('click', onClick, true)
+    document.addEventListener('pointerover', onPointerOver, true)
+    document.addEventListener('focusin', onFocusIn, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('click', onClick, true)
+      document.removeEventListener('pointerover', onPointerOver, true)
+      document.removeEventListener('focusin', onFocusIn, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [interfaceSoundsEnabled, hoverSoundsEnabled, playInterfaceTone])
 
   const applyMod = (mod) => {
     const theme = themes.find((item) => item.name === mod.theme)
@@ -2369,9 +2588,7 @@ function App() {
                           </>
                         ) : (
                           <>
-                            <p>
-                              Sign in with Google to connect a Hrishikesh Account.
-                            </p>
+                            <p>Sign in with Google to connect a Hrishikesh Account.</p>
                             <button
                               type="button"
                               onClick={() => {
@@ -2859,7 +3076,15 @@ function App() {
                         }}
                       >
                         <span>Hrishikesh Account</span>
-                        <kbd>{googleSignedIn ? 'Browser profile' : 'Sign in'}</kbd>
+                        <kbd>
+                          {hrxAccountUser
+                            ? 'Signed in'
+                            : googleSignedIn
+                              ? 'Browser profile'
+                              : hrxAccountReady
+                                ? 'Sign in'
+                                : 'Checking…'}
+                        </kbd>
                       </button>
                     </section>
                     <section className="browser-menu-section">
@@ -3322,35 +3547,40 @@ function App() {
         <header className="home-topbar">
           {isIncognito && <span className="incognito-badge">Incognito</span>}
           <nav className="home-top-links" aria-label="Home links">
-            <button
-              className="home-mail-button"
-              type="button"
-              aria-expanded={homeMailOpen}
-              onClick={() => setHomeMailOpen((open) => !open)}
-            >
-              Mail
-            </button>
-            <button
-              className="home-images-button"
-              type="button"
-              onClick={() => navigate('https://www.google.com/imghp')}
-            >
-              Images
-            </button>
-            <button
-              className="home-app-launcher"
-              type="button"
-              aria-label="Open browser apps"
-              title="Browser apps"
-              aria-expanded={homeAppsOpen}
-              onClick={() => setHomeAppsOpen((open) => !open)}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                {[4, 12, 20].flatMap((y) =>
-                  [4, 12, 20].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.7" />)
-                )}
-              </svg>
-            </button>
+            {(hrxAccountUser || googleSignedIn) && (
+              <>
+                <button
+                  className="home-mail-button"
+                  type="button"
+                  aria-expanded={homeMailOpen}
+                  onClick={() => setHomeMailOpen((open) => !open)}
+                >
+                  <ShortcutLogo name="Gmail" />
+                  <span>Gmail</span>
+                </button>
+                <button
+                  className="home-images-button"
+                  type="button"
+                  onClick={() => navigate('https://www.google.com/imghp')}
+                >
+                  Images
+                </button>
+                <button
+                  className="home-app-launcher"
+                  type="button"
+                  aria-label="Open browser apps"
+                  title="Google apps"
+                  aria-expanded={homeAppsOpen}
+                  onClick={() => setHomeAppsOpen((open) => !open)}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    {[4, 12, 20].flatMap((y) =>
+                      [4, 12, 20].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.7" />)
+                    )}
+                  </svg>
+                </button>
+              </>
+            )}
             {hrxAccountUser || googleSignedIn ? (
               <button
                 className="home-profile-button home-google-account-button"
@@ -3360,21 +3590,22 @@ function App() {
                 aria-expanded={homeProfileOpen}
                 onClick={() => setHomeProfileOpen((open) => !open)}
               >
-                <span aria-hidden="true">H</span>
+                {hrxAccountReady ? (
+                  <AccountAvatar
+                    user={hrxAccountUser}
+                    className="home-google-avatar-large home-header-avatar"
+                  />
+                ) : (
+                  <span aria-hidden="true">…</span>
+                )}
               </button>
-            ) : (
-              <button
-                className="home-sign-in-button"
-                type="button"
-                onClick={() => setHomeProfileOpen(true)}
-              >
-                Sign in
-              </button>
-            )}
+            ) : null}
             {homeMailOpen && (
               <div className="home-mail-menu">
                 <strong>Choose your mail</strong>
-                <small className="home-mail-note">Google sign-in opens in your default browser for account security.</small>
+                <small className="home-mail-note">
+                  Google sign-in opens in your default browser for account security.
+                </small>
                 <div className="home-mail-providers">
                   {[
                     ['Gmail', 'https://mail.google.com/'],
@@ -3429,78 +3660,187 @@ function App() {
               </div>
             )}
             {homeAppsOpen && (
-              <div className="home-app-menu">
+              <div className="home-app-menu" role="menu" aria-label="Google apps">
+                <strong className="home-app-menu-title">Google apps</strong>
                 {[
-                  ['Hrishikesh AI', 'hrx-ai', '✳'],
-                  ['Lens', 'https://lens.google.com/', '⌕'],
-                  ['Mail', 'https://mail.google.com/', '✉'],
-                  ['YouTube', 'https://www.youtube.com/', '▶']
-                ].map(([name, url, icon]) => (
+                  ['Search', 'https://www.google.com/', 'www.google.com'],
+                  ['Gmail', 'https://mail.google.com/', 'mail.google.com'],
+                  ['Maps', 'https://maps.google.com/', 'maps.google.com'],
+                  ['YouTube', 'https://www.youtube.com/', 'www.youtube.com'],
+                  ['Drive', 'https://drive.google.com/', 'drive.google.com'],
+                  ['Calendar', 'https://calendar.google.com/', 'calendar.google.com'],
+                  ['Photos', 'https://photos.google.com/', 'photos.google.com'],
+                  ['Meet', 'https://meet.google.com/', 'meet.google.com'],
+                  ['Chat', 'https://chat.google.com/', 'chat.google.com'],
+                  ['Contacts', 'https://contacts.google.com/', 'contacts.google.com'],
+                  ['Docs', 'https://docs.google.com/document/', 'docs.google.com'],
+                  ['Sheets', 'https://docs.google.com/spreadsheets/', 'docs.google.com'],
+                  ['Slides', 'https://docs.google.com/presentation/', 'docs.google.com'],
+                  ['Forms', 'https://docs.google.com/forms/', 'docs.google.com'],
+                  ['Keep', 'https://keep.google.com/', 'keep.google.com'],
+                  ['Tasks', 'https://tasks.google.com/', 'tasks.google.com'],
+                  ['Translate', 'https://translate.google.com/', 'translate.google.com'],
+                  ['News', 'https://news.google.com/', 'news.google.com'],
+                  ['Play', 'https://play.google.com/', 'play.google.com'],
+                  ['Books', 'https://books.google.com/', 'books.google.com'],
+                  ['Earth', 'https://earth.google.com/', 'earth.google.com'],
+                  ['Lens', 'https://lens.google.com/', 'lens.google.com'],
+                  ['Shopping', 'https://shopping.google.com/', 'shopping.google.com'],
+                  ['Flights', 'https://flights.google.com/', 'www.google.com'],
+                  ['Finance', 'https://www.google.com/finance/', 'www.google.com'],
+                  [
+                    'Arts & Culture',
+                    'https://artsandculture.google.com/',
+                    'artsandculture.google.com'
+                  ],
+                  ['Classroom', 'https://classroom.google.com/', 'classroom.google.com'],
+                  ['Blogger', 'https://www.blogger.com/', 'www.blogger.com'],
+                  ['Analytics', 'https://analytics.google.com/', 'analytics.google.com'],
+                  ['Trends', 'https://trends.google.com/', 'trends.google.com'],
+                  ['Scholar', 'https://scholar.google.com/', 'scholar.google.com'],
+                  ['Google One', 'https://one.google.com/', 'one.google.com'],
+                  ['Wallet', 'https://wallet.google.com/', 'wallet.google.com'],
+                  ['Sites', 'https://sites.google.com/', 'sites.google.com'],
+                  ['Waze', 'https://www.waze.com/', 'www.waze.com']
+                ].map(([name, url]) => (
                   <button
                     type="button"
                     key={name}
+                    role="menuitem"
+                    title={name}
                     onClick={() => {
-                      if (url === 'hrx-ai') openHrxAi()
-                      else navigate(url)
+                      navigate(url)
                       setHomeAppsOpen(false)
                     }}
                   >
-                    <span className={name === 'Hrishikesh AI' ? 'hrx-ai-app-icon' : ''}>
-                      {icon}
-                    </span>
+                    <WebsiteFavicon url={url} name={name} />
                     {name}
                   </button>
                 ))}
+                <a
+                  className="home-app-directory"
+                  href="https://about.google/products/"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    navigate('https://about.google/products/')
+                    setHomeAppsOpen(false)
+                  }}
+                >
+                  More Google products ↗
+                </a>
               </div>
             )}
             {homeProfileOpen && (
-              <div className="home-profile-menu">
-                <span className="home-google-avatar-large" aria-hidden="true">
-                  H
-                </span>
-                <strong>Hrishikesh Account</strong>
-                <small>
-                  {hrxAccountUser
-                    ? `Signed in to Hrishikesh as ${hrxAccountUser.email || 'your Google account'}.`
-                    : googleSignedIn
-                      ? 'Your browser profile is saved on this device. Google websites are signed in separately.'
-                      : 'Your browser profile is saved on this device. Sign in to a Hrishikesh Account to connect your profile.'}
-                </small>
-                {hrxAccountUser && (
+              <div className="home-profile-menu" role="dialog" aria-label="Hrishikesh account">
+                <button
+                  className="home-profile-close"
+                  type="button"
+                  aria-label="Close account menu"
+                  onClick={() => setHomeProfileOpen(false)}
+                >
+                  ×
+                </button>
+                <div className="home-profile-identity">
+                  <AccountAvatar
+                    user={hrxAccountUser}
+                    className="home-google-avatar-large home-profile-google-avatar"
+                  />
+                  <span className="home-profile-copy">
+                    <strong>
+                      {hrxAccountUser?.user_metadata?.full_name ||
+                        hrxAccountUser?.user_metadata?.name ||
+                        'Hrishikesh profile'}
+                    </strong>
+                    <small>
+                      {hrxAccountUser?.email ||
+                        (googleSignedIn ? 'Google website signed in' : 'This device only')}
+                    </small>
+                    <em>{hrxAccountUser ? 'HRX ACCOUNT CONNECTED' : 'LOCAL GAMING PROFILE'}</em>
+                  </span>
+                </div>
+                {!hrxAccountUser ? (
                   <button
+                    className="home-profile-action"
                     type="button"
-                    onClick={async () => {
-                      await supabase?.auth.signOut()
-                      setHrxAccountUser(null)
-                      setHomeProfileOpen(false)
-                    }}
-                  >
-                    Sign out of Hrishikesh
-                  </button>
-                )}
-                {googleSignedIn && (
-                  <button
-                    type="button"
+                    disabled={!hrxAccountReady || accountAuthBusy}
                     onClick={() => {
-                      navigate('https://myaccount.google.com/')
-                      setHomeProfileOpen(false)
+                      setAccountConnectMessage('')
+                      void signInToHrishikeshWithGoogle()
                     }}
                   >
-                    Manage Google website sign-in
+                    <span aria-hidden="true">＋</span>
+                    {accountAuthBusy ? 'Connecting…' : 'Continue with Google'}
                   </button>
+                ) : (
+                  <>
+                    <button
+                      className="home-profile-action"
+                      type="button"
+                      disabled={accountAuthBusy}
+                      onClick={() => {
+                        setAccountConnectMessage('')
+                        void signInToHrishikeshWithGoogle()
+                      }}
+                    >
+                      <span aria-hidden="true">＋</span>
+                      Add another account
+                    </button>
+                    <button
+                      className="home-profile-action home-profile-signout"
+                      type="button"
+                      onClick={async () => {
+                        const { error } = (await supabase?.auth.signOut()) || {}
+                        if (error) {
+                          setAccountConnectMessage(error.message)
+                          return
+                        }
+                        setHrxAccountUser(null)
+                        setHomeProfileOpen(false)
+                      }}
+                    >
+                      <span aria-hidden="true">↪</span>
+                      Sign out
+                    </button>
+                  </>
                 )}
                 {!hrxAccountUser && (
+                  <small className="home-profile-signin-note">
+                    New Google users get a Hrishikesh account automatically.
+                  </small>
+                )}
+                {accountConnectMessage && (
+                  <small className="home-profile-feedback" role="status">
+                    {accountConnectMessage}
+                  </small>
+                )}
+                <button
+                  className="home-profile-manage"
+                  type="button"
+                  onClick={() => {
+                    navigate('https://myaccount.google.com/')
+                    setHomeProfileOpen(false)
+                  }}
+                >
+                  <span aria-hidden="true">
+                    <ShortcutLogo name="Google" />
+                  </span>
+                  Manage your Google Account
+                </button>
+                <footer className="home-profile-legal">
                   <button
                     type="button"
-                    onClick={() => {
-                      setHomeProfileOpen(false)
-                      setAccountConnectMessage('')
-                      setAccountPageTabId(activeTabId)
-                    }}
+                    onClick={() => navigate('https://policies.google.com/privacy')}
                   >
-                    Sign in to Hrishikesh
+                    Privacy
                   </button>
-                )}
+                  <span>·</span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('https://policies.google.com/terms')}
+                  >
+                    Terms
+                  </button>
+                </footer>
               </div>
             )}
           </nav>
@@ -4498,33 +4838,33 @@ function App() {
           <div className="shortcut-grid">
             {homeShortcuts.map((item) => (
               <div className="shortcut-item" key={item.url}>
-                <button
-                  className="shortcut-card"
-                  title={item.name}
-                  aria-label={item.name}
-                  onClick={() => navigate(item.url)}
-                >
-                  <span className={'shortcut-symbol ' + (item.tone || 'custom') + ''}>
-                    {item.tone && item.tone !== 'custom' ? (
-                      <ShortcutLogo name={item.name} />
-                    ) : (
-                      item.name.charAt(0).toUpperCase()
-                    )}
-                  </span>
-                  <span className="shortcut-name">{item.name}</span>
-                </button>
-                <button
-                  className="shortcut-menu-trigger"
-                  type="button"
-                  aria-label={'Shortcut options for ' + item.name}
-                  aria-expanded={shortcutMenuUrl === item.url}
-                  title="Shortcut options"
-                  onClick={() =>
-                    setShortcutMenuUrl((current) => (current === item.url ? '' : item.url))
-                  }
-                >
-                  ⋯
-                </button>
+                <div className="shortcut-card-frame">
+                  <button
+                    className="shortcut-card"
+                    aria-label={item.name}
+                    onClick={() => navigate(item.url)}
+                  >
+                    <span className={'shortcut-symbol ' + (item.tone || 'custom') + ''}>
+                      {item.tone && item.tone !== 'custom' ? (
+                        <ShortcutLogo name={item.name} />
+                      ) : (
+                        item.name.charAt(0).toUpperCase()
+                      )}
+                    </span>
+                    <span className="shortcut-name">{item.name}</span>
+                  </button>
+                  <button
+                    className="shortcut-menu-trigger"
+                    type="button"
+                    aria-label={'Shortcut options for ' + item.name}
+                    aria-expanded={shortcutMenuUrl === item.url}
+                    onClick={() =>
+                      setShortcutMenuUrl((current) => (current === item.url ? '' : item.url))
+                    }
+                  >
+                    ⋯
+                  </button>
+                </div>
                 {shortcutMenuUrl === item.url && (
                   <div className="shortcut-menu" role="menu">
                     <button
@@ -4942,6 +5282,12 @@ function App() {
                   Sign out
                 </button>
               </div>
+            ) : !hrxAccountReady ? (
+              <div className="hrx-account-card">
+                <div className="hrx-account-card-brand">HRX</div>
+                <h1>Checking account…</h1>
+                <p>Checking whether you are already signed in to Hrishikesh.</p>
+              </div>
             ) : (
               <div className="hrx-account-card">
                 <div className="hrx-account-card-brand">HRX</div>
@@ -5301,6 +5647,78 @@ function App() {
                   <small>These switches control real local settings</small>
                 </div>
                 <div className="hrx-mod-tuning">
+                  <label>
+                    <span>
+                      <b>Interface sound effects</b>
+                      <small>Original feedback for Hrishikesh controls</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={interfaceSoundsEnabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked
+                        setInterfaceSoundsEnabled(enabled)
+                        window.localStorage.setItem('hrx-interface-sounds', enabled ? 'on' : 'off')
+                        if (enabled) playInterfaceTone('click')
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>
+                      <b>Launch sound</b>
+                      <small>Plays on first interaction after opening</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={startupSoundEnabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked
+                        setStartupSoundEnabled(enabled)
+                        startupSoundPlayedRef.current = false
+                        window.localStorage.setItem('hrx-startup-sound', enabled ? 'on' : 'off')
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>
+                      <b>Hover sound</b>
+                      <small>Quiet cue when pointing at Hrishikesh controls</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={hoverSoundsEnabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked
+                        setHoverSoundsEnabled(enabled)
+                        window.localStorage.setItem('hrx-hover-sounds', enabled ? 'on' : 'off')
+                      }}
+                    />
+                  </label>
+                  <label className="hrx-volume-row">
+                    <span>
+                      <b>Interface sound volume</b>
+                      <small>{modsSoundVolume}%</small>
+                    </span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={modsSoundVolume}
+                      onChange={(event) => {
+                        const volume = Number(event.target.value)
+                        setModsSoundVolume(volume)
+                        window.localStorage.setItem('hrx-mod-volume', String(volume))
+                      }}
+                    />
+                  </label>
+                  <button
+                    className="hrx-sound-preview"
+                    type="button"
+                    disabled={!interfaceSoundsEnabled}
+                    onClick={() => playInterfaceTone('startup')}
+                  >
+                    Preview launch sound <span>▶</span>
+                  </button>
                   <label>
                     <span>
                       <b>Vertical tabs</b>

@@ -2378,7 +2378,7 @@ button {
 .home-topbar .home-top-links {
   display: flex;
 }
-.home-topbar .home-top-links > button:not(.home-sign-in-button):not(.home-profile-button) {
+.home-topbar .home-top-links > button:not(.home-mail-button):not(.home-images-button):not(.home-app-launcher):not(.home-sign-in-button):not(.home-profile-button) {
   display: none;
 }
 .home-topbar .home-sign-in-button {

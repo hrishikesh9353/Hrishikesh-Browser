@@ -39,7 +39,9 @@ let pendingAuthCallback = process.argv.find((value) => isAuthCallbackUrl(value))
 function isAuthCallbackUrl(value) {
   try {
     const url = new URL(value)
-    return url.protocol === authCallbackScheme && url.hostname === 'auth' && url.pathname === '/callback'
+    return (
+      url.protocol === authCallbackScheme && url.hostname === 'auth' && url.pathname === '/callback'
+    )
   } catch {
     return false
   }
@@ -850,15 +852,17 @@ async function readHrxAiConversation() {
 }
 
 function appendHrxAiConversation(messages) {
-  hrxAiConversationWrite = hrxAiConversationWrite.catch(() => {}).then(async () => {
-    const conversation = await readHrxAiConversation().catch(() => [])
-    const nextConversation = [...conversation, ...messages].slice(-200)
-    const folder = app.getPath('userData')
-    const temporaryPath = `${hrxAiConversationPath()}.${randomUUID()}.tmp`
-    await mkdir(folder, { recursive: true })
-    await writeFile(temporaryPath, JSON.stringify(nextConversation), 'utf8')
-    await rename(temporaryPath, hrxAiConversationPath())
-  })
+  hrxAiConversationWrite = hrxAiConversationWrite
+    .catch(() => {})
+    .then(async () => {
+      const conversation = await readHrxAiConversation().catch(() => [])
+      const nextConversation = [...conversation, ...messages].slice(-200)
+      const folder = app.getPath('userData')
+      const temporaryPath = `${hrxAiConversationPath()}.${randomUUID()}.tmp`
+      await mkdir(folder, { recursive: true })
+      await writeFile(temporaryPath, JSON.stringify(nextConversation), 'utf8')
+      await rename(temporaryPath, hrxAiConversationPath())
+    })
   return hrxAiConversationWrite
 }
 
@@ -1030,6 +1034,41 @@ function createWindow({ incognito = false } = {}) {
   })
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  let devRendererFallbackStarted = false
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      console.error('[Hrishikesh] Renderer failed to load', {
+        errorCode,
+        errorDescription,
+        validatedURL,
+        isMainFrame
+      })
+      if (
+        is.dev &&
+        isMainFrame &&
+        !devRendererFallbackStarted &&
+        validatedURL === process.env['ELECTRON_RENDERER_URL']
+      ) {
+        devRendererFallbackStarted = true
+        mainWindow.loadFile(join(__dirname, '../renderer/index.html')).catch((error) => {
+          console.error('[Hrishikesh] Failed to load built renderer fallback', error)
+        })
+      }
+    }
+  )
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[Hrishikesh] Renderer process exited', details)
+  })
+  mainWindow.webContents.on('console-message', (details) => {
+    if (details.level === 'error') {
+      console.error('[Hrishikesh] Renderer console error', {
+        message: details.message,
+        line: details.lineNumber,
+        sourceId: details.sourceId
+      })
+    }
+  })
   mainWindow.webContents.on('did-finish-load', () => sendWindowState(mainWindow))
   mainWindow.webContents.on('did-finish-load', () => {
     const data = browserWindows.get(mainWindow)
@@ -1040,9 +1079,13 @@ function createWindow({ incognito = false } = {}) {
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']).catch((error) => {
+      console.error('[Hrishikesh] Failed to load dev renderer', error)
+    })
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html')).catch((error) => {
+      console.error('[Hrishikesh] Failed to load packaged renderer', error)
+    })
   }
 }
 

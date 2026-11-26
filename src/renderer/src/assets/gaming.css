@@ -522,6 +522,32 @@ textarea:focus-visible {
   gap: 9px;
 }
 
+.home-topbar .home-top-links .home-mail-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  order: 1;
+}
+
+.home-topbar .home-top-links .home-images-button {
+  order: 2;
+}
+
+.home-topbar .home-top-links .home-app-launcher {
+  order: 3;
+}
+
+.home-mail-button .shortcut-logo {
+  width: 18px;
+  height: 18px;
+}
+
+.home-topbar .home-top-links .home-google-account-button,
+.home-topbar .home-top-links .home-sign-in-button {
+  order: 4;
+  margin-left: 4px;
+}
+
 .home-top-links > button {
   padding: 7px 11px;
   border: 1px solid transparent;
@@ -564,6 +590,208 @@ textarea:focus-visible {
   background: linear-gradient(145deg, #512031, #1b1520);
 }
 
+.home-profile-menu {
+  top: 48px;
+  right: 0;
+  width: min(382px, calc(100vw - 24px));
+  justify-items: stretch;
+  gap: 8px;
+  padding: 18px 14px 12px;
+  border-color: #5b3348;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 92% 0, #ff174e1b, transparent 42%),
+    linear-gradient(145deg, #17151c, #0b0b0e 72%);
+  box-shadow: 0 22px 70px #000d, 0 0 26px #ff174e16, inset 0 1px #ffffff0c;
+}
+
+.home-profile-close {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 30px !important;
+  height: 30px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #bcb5c1 !important;
+  background: transparent !important;
+  font-size: 24px !important;
+  line-height: 1;
+}
+
+.home-profile-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 8px 14px;
+  border-bottom: 1px solid #ffffff12;
+}
+
+.home-profile-menu .home-google-avatar-large {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border: 2px solid #ff315f;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px #25202b, 0 0 18px #ff315f48;
+  font-size: 28px;
+}
+
+.home-profile-google-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.home-account-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.home-top-links .home-google-account-button .home-header-avatar {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  font-size: 17px;
+}
+
+.home-profile-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding-right: 28px;
+}
+
+.home-profile-copy strong {
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-profile-copy small {
+  overflow: hidden;
+  color: #b8b1bf;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-profile-copy em {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 4px 8px;
+  border: 1px solid #ff315f55;
+  border-radius: 999px;
+  color: #ff9bb1;
+  background: #ff315f14;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.home-profile-menu .home-profile-action,
+.home-profile-menu .home-profile-manage {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 0 16px;
+  border: 1px solid #ffffff0d;
+  border-radius: 11px;
+  color: #f4eff5;
+  background: #ffffff06;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.home-profile-menu .home-profile-action > span,
+.home-profile-menu .home-profile-manage > span {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #302a35;
+  font-size: 20px;
+}
+
+.home-profile-menu .home-profile-signout {
+  border-radius: 11px 11px 16px 16px;
+}
+
+.home-profile-menu .home-profile-manage {
+  min-height: 56px;
+  margin-top: 9px;
+  border-radius: 999px;
+}
+
+.home-profile-menu .home-profile-manage > span {
+  color: #4285f4;
+  background: #f5f5f5;
+  font-weight: 900;
+}
+
+.home-profile-menu .home-profile-manage > span .shortcut-logo {
+  width: 20px;
+  height: 20px;
+}
+
+.home-profile-menu .home-profile-legal {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 11px;
+  padding-top: 7px;
+  color: #908995;
+}
+
+.home-profile-menu .home-profile-legal button {
+  width: auto;
+  margin: 0;
+  padding: 5px;
+  border: 0;
+  color: #c7bfca;
+  background: transparent;
+  font-size: 10px;
+}
+
+.home-profile-signin-note,
+.home-profile-feedback {
+  display: block;
+  padding: 2px 8px 4px;
+  color: #aaa1af;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.home-profile-feedback {
+  color: #ffb2c2;
+}
+
+.home-profile-menu button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
 .home-profile-menu strong,
 .home-app-menu button,
 .home-mail-menu > strong {
@@ -599,6 +827,16 @@ textarea:focus-visible {
   max-height: 155px;
   object-fit: contain;
   filter: drop-shadow(0 0 20px #ff174e49) drop-shadow(0 4px 12px #000a);
+  animation: hrx-launch-wordmark 1.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes hrx-launch-wordmark {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); filter: drop-shadow(0 0 0 transparent); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-brand-logo .home-wordmark-image { animation: none; }
 }
 
 .home-search {
@@ -761,6 +999,56 @@ textarea:focus-visible {
 .shortcut-menu-trigger:hover {
   border-color: var(--gx-red);
   background: #ff174e;
+}
+
+/* Keep the options button inside each fixed-size shortcut tile. */
+.shortcut-item {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  flex: 0 0 110px;
+  width: 110px;
+  min-width: 110px;
+  height: 110px;
+  min-height: 110px;
+}
+
+.shortcut-card-frame {
+  position: relative;
+  display: block;
+  flex: 0 0 110px;
+  width: 110px;
+  height: 110px;
+  box-sizing: border-box;
+}
+
+.shortcut-card-frame > .shortcut-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 110px;
+  height: 110px;
+  min-height: 110px;
+  padding: 7px 5px;
+}
+
+.shortcut-card-frame > .shortcut-menu-trigger {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  margin: 0;
+}
+
+.shortcut-add-tile {
+  box-sizing: border-box;
+  height: 110px;
+  min-height: 110px;
 }
 
 .shortcut-menu,
@@ -2407,22 +2695,22 @@ textarea:focus-visible {
   filter: hue-rotate(142deg) saturate(1.15);
 }
 
-.browser-home.shader-shiftfx .start-page {
+.browser-home.shader-shiftfx .start-page > :not(.home-topbar) {
   filter: hue-rotate(18deg) contrast(1.06) saturate(1.2);
 }
-.browser-home.shader-midnightfx .start-page {
+.browser-home.shader-midnightfx .start-page > :not(.home-topbar) {
   filter: brightness(0.78) saturate(0.82) contrast(1.08);
 }
-.browser-home.shader-fadefx .start-page {
+.browser-home.shader-fadefx .start-page > :not(.home-topbar) {
   filter: saturate(0.55) contrast(0.92) brightness(1.04);
 }
-.browser-home.shader-boostfx .start-page {
+.browser-home.shader-boostfx .start-page > :not(.home-topbar) {
   filter: contrast(1.14) saturate(1.24);
 }
-.browser-home.shader-monocore .start-page {
+.browser-home.shader-monocore .start-page > :not(.home-topbar) {
   filter: grayscale(1) contrast(1.08);
 }
-.browser-home.shader-duofx .start-page {
+.browser-home.shader-duofx .start-page > :not(.home-topbar) {
   filter: hue-rotate(142deg) saturate(1.12) contrast(1.06);
 }
 
@@ -2432,43 +2720,27 @@ textarea:focus-visible {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 72px 24px 28px;
+  padding: 18px;
   overflow: auto;
   color: #f6f2f5;
-  background:
-    radial-gradient(ellipse at 10% 8%, #ff315f24, transparent 32%),
-    radial-gradient(ellipse at 92% 90%, #14d6e822, transparent 34%),
-    linear-gradient(135deg, #09090d, #121018 55%, #09090d);
+  background: #050409b8;
+  backdrop-filter: blur(8px);
 }
 
 .hrx-account-page::before,
 .hrx-account-page::after {
-  position: fixed;
-  width: min(24vw, 300px);
-  height: 3px;
-  content: '';
-  background: linear-gradient(90deg, transparent, #ff315f, #14d6e8, transparent);
-  box-shadow: 0 0 22px #ff315f55;
-}
-
-.hrx-account-page::before {
-  top: 0;
-  right: 0;
-}
-
-.hrx-account-page::after {
-  bottom: 0;
-  left: 0;
+  display: none;
 }
 
 .hrx-account-close {
   position: absolute;
-  top: 22px;
-  right: 24px;
-  width: 40px;
-  height: 40px;
-  border: 1px solid #ffffff20;
-  border-radius: 12px;
+  z-index: 1;
+  top: max(14px, calc(50% - 216px));
+  right: max(14px, calc((100vw - 460px) / 2 + 10px));
+  width: 34px;
+  height: 34px;
+  border: 1px solid #ffffff24;
+  border-radius: 9px;
   color: #eee8ed;
   background: #ffffff09;
   font-size: 24px;
@@ -2476,6 +2748,7 @@ textarea:focus-visible {
 }
 
 .hrx-account-brand {
+  display: none;
   position: absolute;
   top: 24px;
   left: 28px;
@@ -2505,11 +2778,13 @@ textarea:focus-visible {
   width: min(100%, 460px);
   display: grid;
   gap: 14px;
-  padding: 34px;
-  border: 1px solid #ffffff1c;
-  border-radius: 18px;
-  background: linear-gradient(145deg, #19171f, #101014 72%);
-  box-shadow: 0 28px 90px #000a, 0 0 42px #ff315f12;
+  padding: 30px;
+  border: 1px solid #693b50;
+  border-radius: 17px;
+  background:
+    radial-gradient(ellipse at 100% 0, #ff315f18, transparent 42%),
+    linear-gradient(145deg, #1b1720, #0e0d12 72%);
+  box-shadow: 0 24px 78px #000c, 0 0 32px #ff315f18, inset 0 1px #ffffff0c;
 }
 
 .hrx-account-card-brand {
@@ -2987,6 +3262,132 @@ textarea:focus-visible {
 .hrx-ai-notice { margin: 9px 0 0; color: #ff8298; font-size: 10px; }
 .hrx-ai-composer { position: relative; display: grid; grid-template-columns: 1fr 40px; gap: 7px; margin-top: 12px; padding: 9px 9px 25px; border: 1px solid #ffffff22; border-radius: 9px; background: #11121a; }
 .hrx-ai-composer:focus-within { border-color: #08d8e699; box-shadow: 0 0 18px #08d8e612; }
+
+/* Keep both search fields visually steady while typing; remove the loud focus halo. */
+.toolbar-address:focus-within {
+  border-color: #4a3743;
+  background: linear-gradient(180deg, #211a23, #17131a);
+  box-shadow: inset 0 1px #ffffff09;
+}
+
+.toolbar-address input:focus-visible,
+.home-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.home-search:focus-within {
+  border-color: #70344b;
+  box-shadow:
+    inset 0 1px #ffffff0d,
+    0 8px 30px #0007,
+    0 0 22px #ff174e17;
+}
+
+.home-topbar .home-top-links {
+  margin-right: calc(-1 * clamp(295px, 24vw, 350px) + 28px);
+}
+
+@media (max-width: 1160px) {
+  .home-topbar .home-top-links {
+    margin-right: calc(-1 * clamp(244px, 28vw, 280px) + 17px);
+  }
+}
+
+@media (max-width: 720px) {
+  .home-topbar .home-top-links {
+    margin-right: calc(-1 * clamp(212px, 34vw, 244px) + 14px);
+  }
+}
+
+.home-top-links .home-mail-button,
+.home-top-links .home-images-button,
+.home-top-links .home-app-launcher {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.home-top-links .home-mail-button:hover,
+.home-top-links .home-images-button:hover,
+.home-top-links .home-app-launcher:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+}
+
+.home-app-menu {
+  right: 42px;
+  width: min(520px, calc(100vw - 24px));
+  max-height: min(72vh, 620px);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.home-app-menu .home-app-menu-title,
+.home-app-menu .home-app-directory {
+  grid-column: 1 / -1;
+}
+
+.home-app-menu .home-app-menu-title {
+  padding: 2px 4px 7px;
+  color: #f9f2f7;
+  font-size: 12px;
+}
+
+.home-app-menu button {
+  min-width: 0;
+  min-height: 70px;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+}
+
+.home-app-menu button .google-app-icon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #ffffff12;
+  border-radius: 11px;
+  color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.home-app-menu .google-app-icon img {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  object-fit: contain;
+  filter: none;
+}
+
+.home-app-menu .home-app-directory {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+  border-top: 1px solid #ffffff14;
+  color: #ff7896;
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.home-app-menu .home-app-directory:hover {
+  color: #fff;
+}
+
+@media (max-width: 560px) {
+  .home-app-menu {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    right: 42px;
+  }
+}
 .hrx-ai-composer textarea { resize: vertical; min-height: 42px; border: 0; outline: 0; color: #f1edf5; background: transparent; font: 12px 'Segoe UI',sans-serif; }
 .hrx-ai-composer textarea::placeholder { color: #706c78; }
 .hrx-ai-composer > button { align-self: center; width: 36px; height: 36px; border: 0; border-radius: 7px; color: #061014; background: #08d8e6; cursor: pointer; font-size: 22px; }

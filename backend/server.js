@@ -10,7 +10,10 @@ function loadLocalEnvironment() {
       const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/)
       if (!match || process.env[match[1]] !== undefined) continue
       let value = match[2]
-      if ((value.startsWith('\"') && value.endsWith('\"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
         value = value.slice(1, -1)
       }
       process.env[match[1]] = value
@@ -57,7 +60,8 @@ async function readBody(request) {
   let size = 0
   for await (const chunk of request) {
     size += chunk.length
-    if (size > maxBodyBytes) throw Object.assign(new Error('Request is too large.'), { status: 413 })
+    if (size > maxBodyBytes)
+      throw Object.assign(new Error('Request is too large.'), { status: 413 })
     chunks.push(chunk)
   }
   if (!size) return {}
@@ -71,8 +75,8 @@ async function readBody(request) {
 function configured() {
   return Boolean(
     process.env.SUPABASE_URL &&
-      process.env.SUPABASE_PUBLISHABLE_KEY &&
-      process.env.SUPABASE_SECRET_KEY
+    process.env.SUPABASE_PUBLISHABLE_KEY &&
+    process.env.SUPABASE_SECRET_KEY
   )
 }
 
@@ -150,7 +154,9 @@ async function handle(request, response) {
   }
 
   if (!configured()) {
-    send(response, 503, { error: 'Backend setup is incomplete. Configure the Supabase environment.' })
+    send(response, 503, {
+      error: 'Backend setup is incomplete. Configure the Supabase environment.'
+    })
     return
   }
 
@@ -184,7 +190,11 @@ async function handle(request, response) {
       await supabaseRequest(`/rest/v1/browser_profiles?${query}`, {
         method: 'POST',
         headers: { prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ user_id: user.id, data: body.profile, updated_at: new Date().toISOString() })
+        body: JSON.stringify({
+          user_id: user.id,
+          data: body.profile,
+          updated_at: new Date().toISOString()
+        })
       })
       send(response, 200, { ok: true })
       return
@@ -200,7 +210,10 @@ async function handle(request, response) {
       const messages = Array.isArray(body.messages)
         ? body.messages
             .slice(-20)
-            .filter((item) => ['user', 'assistant'].includes(item?.role) && typeof item.content === 'string')
+            .filter(
+              (item) =>
+                ['user', 'assistant'].includes(item?.role) && typeof item.content === 'string'
+            )
             .map((item) => ({ role: item.role, content: item.content.slice(0, 5000) }))
         : []
       const latestQuestion = [...messages].reverse().find((item) => item.role === 'user')
@@ -216,7 +229,11 @@ async function handle(request, response) {
             ? { authorization: `Bearer ${process.env.HRX_AI_API_KEY}` }
             : {})
         },
-        body: JSON.stringify({ model: process.env.HRX_AI_MODEL || 'hrx-default', messages, stream: false }),
+        body: JSON.stringify({
+          model: process.env.HRX_AI_MODEL || 'hrx-default',
+          messages,
+          stream: false
+        }),
         signal: AbortSignal.timeout(120_000)
       })
       const modelData = await modelResponse.json().catch(() => ({}))
@@ -231,7 +248,12 @@ async function handle(request, response) {
       }
       const records = [
         { user_id: user.id, role: 'user', content: latestQuestion.content },
-        { user_id: user.id, role: 'assistant', content: answer, model: modelData.model || process.env.HRX_AI_MODEL || 'hrx-default' }
+        {
+          user_id: user.id,
+          role: 'assistant',
+          content: answer,
+          model: modelData.model || process.env.HRX_AI_MODEL || 'hrx-default'
+        }
       ]
       await supabaseRequest('/rest/v1/hrx_ai_messages', {
         method: 'POST',
@@ -282,16 +304,20 @@ async function handle(request, response) {
   } catch (error) {
     const status = Number.isInteger(error.status) ? error.status : 503
     if (status >= 500) console.error(`[backend] ${url.pathname}: ${error.message}`)
-    send(response, status, { error: status >= 500 ? 'The backend could not finish that request.' : error.message })
+    send(response, status, {
+      error: status >= 500 ? 'The backend could not finish that request.' : error.message
+    })
   }
 }
 
-http.createServer((request, response) => {
-  void handle(request, response).catch((error) => {
-    console.error(`[backend] request failed: ${error.message}`)
-    if (!response.headersSent) send(response, 500, { error: 'Unexpected backend error.' })
-    else response.end()
+http
+  .createServer((request, response) => {
+    void handle(request, response).catch((error) => {
+      console.error(`[backend] request failed: ${error.message}`)
+      if (!response.headersSent) send(response, 500, { error: 'Unexpected backend error.' })
+      else response.end()
+    })
   })
-}).listen(port, host, () => {
-  console.log(`Hrishikesh API listening on ${host}:${port}`)
-})
+  .listen(port, host, () => {
+    console.log(`Hrishikesh API listening on ${host}:${port}`)
+  })

@@ -6,9 +6,19 @@ protocols:
       - hrishikesh
 directories:
   buildResources: build
+  output: release/win-x64
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!android/**'
+  - '!backend/**'
+  - '!capacitor.config.json'
+  - '!dist/**'
+  - '!release/**'
+  - '!.builder-cache/**'
+  - '!.build-temp/**'
+  - '!.electron-cache/**'
+  - '!**/.gradle/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
