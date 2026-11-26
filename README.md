@@ -26,7 +26,24 @@ The vision model is large; install it only if you want local image analysis. The
 npm run build:win
 ```
 
-The installer is written to the `dist` folder.
+The configured Windows package output is `release/win-x64`. `npm run build` also produces the production web renderer at `out/renderer`.
+
+## Android wrapper
+
+The Capacitor wrapper renders the standalone home experience; it is not a full multi-tab Android browser. To sync and build it:
+
+```powershell
+npm install
+npm run build
+npx cap sync android
+npx cap open android
+```
+
+Build and launch the Android app from Android Studio on an emulator or device. Electron-only tab/session APIs do not run in the Android wrapper.
+
+## Render API deployment
+
+`render.yaml` defines the `hrishikesh-api` Node service with `backend` as its root. Connect the GitHub repository in Render and configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `ALLOWED_ORIGINS` in Render's Environment settings. The secret key belongs only in Render's secret environment variables. `HRX_AI_URL` and `HRX_AI_API_KEY` are optional; without them, hosted AI reports unavailable. Render checks `/health` after deployment.
 
 ## HRX AI
 
