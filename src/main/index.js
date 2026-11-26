@@ -683,6 +683,7 @@ async function getTabProcessRows(mainWindow) {
 }
 
 function getTrustedMainWindow(event) {
+  if (event.senderFrame && event.senderFrame !== event.sender.mainFrame) return null
   const mainWindow = BrowserWindow.fromWebContents(event.sender)
   return mainWindow?.webContents === event.sender ? mainWindow : null
 }
@@ -1035,6 +1036,19 @@ function createWindow({ incognito = false } = {}) {
   })
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    let allowed
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      try {
+        allowed = new URL(url).origin === new URL(process.env['ELECTRON_RENDERER_URL']).origin
+      } catch {
+        allowed = false
+      }
+    } else {
+      allowed = url.startsWith('file://')
+    }
+    if (!allowed) event.preventDefault()
+  })
   let devRendererFallbackStarted = false
   mainWindow.webContents.on(
     'did-fail-load',

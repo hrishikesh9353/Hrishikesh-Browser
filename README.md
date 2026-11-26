@@ -11,6 +11,15 @@ npm install
 npm run dev
 ```
 
+The optional local model can be installed with Ollama:
+
+```powershell
+ollama pull llama3.2
+ollama pull llama3.2-vision
+```
+
+The vision model is large; install it only if you want local image analysis. The app will explain when the configured model is missing.
+
 ## Build an installer
 
 ```powershell
@@ -32,6 +41,10 @@ The optional AI Agent mode is off by default. When enabled, the AI can propose o
 The Electron main process is the local backend for the desktop app. It keeps browser preferences, shortcuts, bookmarks, and HRX AI conversation history in Electron's per-user data folder. AI chat history is limited to the latest 200 messages; incognito windows do not read or save that history. Passwords use Electron's operating-system encryption when it is available, and browser site data uses a persistent Chromium profile.
 
 This local backend does not sync data to GitHub or another computer. A shared service for other users needs a hosted API, database, and account authentication; none are configured in this repository yet.
+
+For the Node backend, copy `backend/.env.example` to `backend/.env.local` and fill it locally. `.env.local` and other environment files are ignored by Git and excluded from the Windows package. On Render, set those values in the service's Environment dashboard; never put the Supabase secret key in source or a committed `.env` file. Authenticated API endpoints verify the Supabase bearer token before accessing account data or hosted AI.
+
+Electron renderer security uses context isolation, disabled Node integration, sandboxed renderer and web views, a restrictive Content Security Policy, denied new windows, and local-only top-level navigation for the application shell. IPC handlers accept calls only from the top-level Hrishikesh window; untrusted website views do not receive the preload API.
 
 ## Notes
 
