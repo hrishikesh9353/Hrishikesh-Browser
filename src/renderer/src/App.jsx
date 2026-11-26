@@ -1902,12 +1902,16 @@ function App() {
         if (context.state === 'suspended') void context.resume()
         const now = context.currentTime
         const frequencies =
-          kind === 'startup' ? [392, 523.25, 659.25] : kind === 'hover' ? [740] : [587, 784]
+          kind === 'startup'
+            ? [392, 523.25, 659.25, 783.99, 659.25, 1046.5]
+            : kind === 'hover'
+              ? [740]
+              : [587, 784]
         frequencies.forEach((frequency, index) => {
           const oscillator = context.createOscillator()
           const gain = context.createGain()
-          const start = now + index * (kind === 'startup' ? 0.075 : 0.018)
-          const duration = kind === 'startup' ? 0.15 : kind === 'hover' ? 0.035 : 0.07
+          const start = now + index * (kind === 'startup' ? 0.18 : 0.018)
+          const duration = kind === 'startup' ? 0.2 : kind === 'hover' ? 0.035 : 0.07
           oscillator.type = 'sine'
           oscillator.frequency.setValueAtTime(frequency, start)
           gain.gain.setValueAtTime(0.0001, start)
