@@ -340,6 +340,19 @@ CodeBlock.propTypes = {
   setPreviewOpen: PropTypes.func.isRequired
 }
 
+function parseHrxAgentAction(content) {
+  const match = content.match(/```hrx-action\s*\n([\s\S]*?)```/i)
+  if (!match) return null
+  try {
+    const action = JSON.parse(match[1])
+    return typeof action?.name === 'string' && action.args && typeof action.args === 'object'
+      ? action
+      : null
+  } catch {
+    return null
+  }
+}
+
 function App() {
   const addressInputRef = useRef(null)
   const bookmarkImportRef = useRef(null)
@@ -423,6 +436,17 @@ function App() {
   const [hrxAiInput, setHrxAiInput] = useState('')
   const [hrxAiBusy, setHrxAiBusy] = useState(false)
   const [hrxAiNotice, setHrxAiNotice] = useState('')
+  const [hrxAgentMode, setHrxAgentMode] = useState(
+    () => window.localStorage.getItem('hrx-agent-mode') === 'on'
+  )
+  const [hrxAgentLog, setHrxAgentLog] = useState(() => {
+    try {
+      const log = JSON.parse(window.localStorage.getItem('hrx-agent-log') || '[]')
+      return Array.isArray(log) ? log.slice(0, 50) : []
+    } catch {
+      return []
+    }
+  })
   const [modsPageTabId, setModsPageTabId] = useState(null)
   const [modDraftName, setModDraftName] = useState('')
   const [modDraftTheme, setModDraftTheme] = useState('Cyber')
@@ -1158,6 +1182,111 @@ function App() {
     })
   }
 
+  const logHrxAgentAction = (label, outcome) => {
+    const entry = { id: crypto.randomUUID(), at: new Date().toISOString(), label, outcome }
+    const next = [entry, ...hrxAgentLog].slice(0, 50)
+    setHrxAgentLog(next)
+    window.localStorage.setItem('hrx-agent-log', JSON.stringify(next))
+  }
+
+  const executeHrxAgentAction = async (proposal) => {
+    if (
+      !hrxAgentMode ||
+      !proposal ||
+      ![
+        'open_tab',
+        'navigate',
+        'add_bookmark',
+        'add_shortcut',
+        'set_theme',
+        'switch_workspace',
+        'screenshot',
+        'save_code'
+      ].includes(proposal.name)
+    ) {
+      setHrxAiNotice('Agent mode is off or the proposed action is not on the allowed list.')
+      return
+    }
+    const args = proposal.args || {}
+    const needsConfirmation = ['add_bookmark', 'add_shortcut', 'set_theme', 'save_code'].includes(
+      proposal.name
+    )
+    if (
+      needsConfirmation &&
+      !window.confirm(`Allow Hrishikesh AI to ${proposal.name.replaceAll('_', ' ')}?`)
+    ) {
+      logHrxAgentAction(proposal.name, 'cancelled by user')
+      return
+    }
+    try {
+      if (proposal.name === 'open_tab') await window.api.newTab()
+      else if (proposal.name === 'navigate') {
+        const url = new URL(String(args.url || ''))
+        if (!['http:', 'https:'].includes(url.protocol))
+          throw new Error('Only HTTP or HTTPS navigation is allowed.')
+        await window.api.navigate(url.href)
+      } else if (proposal.name === 'add_bookmark') {
+        const url = new URL(String(args.url || ''))
+        if (!['http:', 'https:'].includes(url.protocol))
+          throw new Error('Only HTTP or HTTPS bookmarks are allowed.')
+        persistBookmarks([
+          { name: String(args.name || url.hostname).slice(0, 80), url: url.href },
+          ...bookmarks.filter((item) => item.url !== url.href)
+        ])
+      } else if (proposal.name === 'add_shortcut') {
+        const url = new URL(String(args.url || ''))
+        if (!['http:', 'https:'].includes(url.protocol))
+          throw new Error('Only HTTP or HTTPS shortcuts are allowed.')
+        persistShortcuts([
+          { name: String(args.name || url.hostname).slice(0, 48), url: url.href },
+          ...homeShortcuts.filter((item) => item.url !== url.href)
+        ])
+      } else if (proposal.name === 'set_theme') {
+        const theme = themes.find(
+          (item) => item.name.toLowerCase() === String(args.name || '').toLowerCase()
+        )
+        if (!theme) throw new Error('That theme is not available.')
+        setActiveTheme(theme)
+        window.api.savePreferences({
+          theme,
+          customBackground,
+          customPanel,
+          customAccent,
+          backgroundPhoto,
+          photoZoom,
+          photoX,
+          photoY,
+          photoBrightness,
+          showBookmarksBar,
+          shortcuts: homeShortcuts,
+          bookmarks,
+          readingList
+        })
+      } else if (proposal.name === 'switch_workspace') {
+        const workspace = sidebarWorkspaces.find(
+          (name) => name.toLowerCase() === String(args.name || '').toLowerCase()
+        )
+        if (!workspace) throw new Error('That workspace does not exist.')
+        await window.api.groupTab(workspace)
+      } else if (proposal.name === 'screenshot') {
+        setCapturePanelOpen(true)
+        await captureScreenImage(currentUrl ? 'tab' : 'app')
+      } else if (proposal.name === 'save_code') {
+        if (typeof args.code !== 'string' || args.code.length > 500_000)
+          throw new Error('Code content is missing or too large.')
+        const result = await window.api.saveAiCode(
+          String(args.name || 'hrx-generated.txt'),
+          args.code
+        )
+        if (!result?.ok) throw new Error('Save was cancelled or failed.')
+      }
+      logHrxAgentAction(proposal.name, 'completed')
+    } catch (error) {
+      logHrxAgentAction(proposal.name, 'failed')
+      setHrxAiNotice(error.message || 'The action failed.')
+    }
+  }
+
   const showBrowserMenuView = (view) => {
     setBrowserMenuView(view)
     setHoveredBrowserMenuView('')
@@ -1526,8 +1655,14 @@ function App() {
     setHrxAiBusy(true)
     setHrxAiNotice('')
     try {
-      const requestMessages = hrxAiSystemPrompt.trim()
-        ? [{ role: 'system', content: hrxAiSystemPrompt.trim() }, ...nextMessages]
+      const agentInstructions = hrxAgentMode
+        ? 'You may propose one Hrishikesh app action only when useful. Never claim it was executed. Propose only a whitelisted action as a final fenced block: ```hrx-action then JSON {"name":"open_tab|navigate|add_bookmark|add_shortcut|set_theme|switch_workspace|screenshot|save_code","args":{...}} then ```. Do not propose shell, system commands, arbitrary file paths, or deletes.'
+        : ''
+      const systemPrompt = [hrxAiSystemPrompt.trim(), agentInstructions]
+        .filter(Boolean)
+        .join('\n\n')
+      const requestMessages = systemPrompt
+        ? [{ role: 'system', content: systemPrompt }, ...nextMessages]
         : nextMessages
       const result = await window.api.askHrxAi(requestMessages, selectedModel, {
         requestId,
@@ -6427,6 +6562,32 @@ function App() {
                       placeholder="llama3.2-vision"
                     />
                   </label>
+                  <label className="hrx-ai-agent-setting">
+                    <input
+                      type="checkbox"
+                      checked={hrxAgentMode}
+                      onChange={(event) => {
+                        setHrxAgentMode(event.target.checked)
+                        window.localStorage.setItem(
+                          'hrx-agent-mode',
+                          event.target.checked ? 'on' : 'off'
+                        )
+                      }}
+                    />
+                    Agent mode · off by default
+                  </label>
+                  <p className="hrx-ai-agent-disclaimer">
+                    Only listed Hrishikesh actions are offered. Sensitive edits ask for
+                    confirmation. No shell/system commands are allowed.
+                  </p>
+                  <details className="hrx-ai-agent-log">
+                    <summary>Action log ({hrxAgentLog.length})</summary>
+                    {hrxAgentLog.map((entry) => (
+                      <p key={entry.id}>
+                        {entry.at} · {entry.label} · {entry.outcome}
+                      </p>
+                    ))}
+                  </details>
                 </details>
                 <div
                   className="hrx-ai-chat"
@@ -6463,7 +6624,20 @@ function App() {
                       >
                         <span>{message.role === 'user' ? 'YOU' : 'HRX AI'}</span>
                         {message.role === 'assistant' ? (
-                          <HrxAiResponse content={message.content} />
+                          <>
+                            <HrxAiResponse content={message.content} />
+                            {hrxAgentMode && parseHrxAgentAction(message.content) && (
+                              <button
+                                className="hrx-ai-agent-run"
+                                type="button"
+                                onClick={() =>
+                                  void executeHrxAgentAction(parseHrxAgentAction(message.content))
+                                }
+                              >
+                                Review & run suggested action
+                              </button>
+                            )}
+                          </>
                         ) : (
                           <p>{message.content}</p>
                         )}

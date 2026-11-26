@@ -23,7 +23,9 @@ The installer is written to the `dist` folder.
 
 HRX AI connects to an Ollama service running on this computer at `http://127.0.0.1:11434`. Install Ollama and download a model before using the chat. Prompts are sent to that local service; this project does not include a hosted AI service or model weights. Text responses stream from Ollama and can be stopped. Chat titles, pinning, search, and persona settings are saved locally in this browser profile. Generated fenced code has copy/save controls and a sandboxed HTML/JavaScript preview. Text and code file attachments are sent to the local model; images require a vision model, for example `ollama pull llama3.2-vision`.
 
-AI limitations: Supabase conversation sync, PDF text extraction, regenerate, tool/agent mode, and persistent image attachments are not implemented. Image analysis was not run in this environment because no vision model is installed. Local text streaming was verified against the installed Ollama service; the desktop UI path was not end-to-end exercised in this phase.
+AI limitations: Supabase conversation sync, PDF text extraction, regenerate, and persistent image attachments are not implemented. Image analysis was not run in this environment because no vision model is installed. Local text streaming was verified against the installed Ollama service; the desktop UI path was not end-to-end exercised in this phase.
+
+The optional AI Agent mode is off by default. When enabled, the AI can propose only `open_tab`, HTTP/HTTPS `navigate`, `add_bookmark`, `add_shortcut`, `set_theme`, `switch_workspace`, `screenshot`, or `save_code`. The user must click to review a proposal, and settings/bookmark/shortcut/file changes request confirmation. It cannot execute shell commands or delete data. Actions are logged locally. Agent actions are suggestion-driven; the model does not run app commands silently.
 
 ## Local backend and saved data
 

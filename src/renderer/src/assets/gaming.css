@@ -4073,6 +4073,45 @@ textarea:focus-visible {
   border: 0;
   background: #fff;
 }
+.hrx-ai-agent-setting {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  color: #ff718d;
+  font-size: 11px;
+}
+.hrx-ai-agent-disclaimer {
+  color: #9c97a9;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.hrx-ai-agent-log {
+  max-height: 140px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid #ffffff12;
+  border-radius: 7px;
+  font-size: 10px;
+}
+.hrx-ai-agent-log summary {
+  color: #08d8e6;
+  cursor: pointer;
+}
+.hrx-ai-agent-log p {
+  overflow-wrap: anywhere;
+  color: #aaa5b3;
+}
+.hrx-ai-agent-run {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border: 1px solid #ff174e66;
+  border-radius: 7px;
+  color: #fff;
+  background: #ff174e22;
+  cursor: pointer;
+  font-size: 10px;
+}
 .hrx-ai-title-row {
   display: flex;
   align-items: center;
