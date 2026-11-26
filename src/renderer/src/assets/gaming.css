@@ -3869,13 +3869,209 @@ textarea:focus-visible {
   font-size: 10px;
 }
 .hrx-ai-shell {
-  display: flex;
-  width: min(850px, calc(100% - 32px));
+  display: grid;
+  width: min(1120px, calc(100% - 32px));
   min-height: 0;
   flex: 1;
-  flex-direction: column;
-  align-self: center;
+  grid-template-columns: 210px minmax(0, 1fr);
+  align-self: stretch;
+  gap: 20px;
   padding: 30px 0 22px;
+}
+.hrx-ai-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.hrx-ai-conversation-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #ffffff16;
+  border-radius: 12px;
+  background: #0b0b1299;
+}
+.hrx-ai-conversation-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ddd8e7;
+  font-size: 12px;
+}
+.hrx-ai-conversation-list input {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #ffffff1b;
+  border-radius: 8px;
+  color: inherit;
+  background: #11111a;
+}
+.hrx-ai-conversation-heading button,
+.hrx-ai-conversation button {
+  border: 0;
+  border-radius: 6px;
+  color: #b9b3c6;
+  background: transparent;
+  cursor: pointer;
+}
+.hrx-ai-conversation-heading button {
+  padding: 6px 8px;
+  border: 1px solid #ff174e55;
+  color: #ff5477;
+}
+.hrx-ai-conversation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 2px;
+  align-items: center;
+  padding: 3px;
+  border-radius: 7px;
+  background: #ffffff06;
+}
+.hrx-ai-conversation.active {
+  outline: 1px solid #08d8e655;
+  background: #08d8e611;
+}
+.hrx-ai-conversation button {
+  padding: 5px;
+  font-size: 11px;
+}
+.hrx-ai-conversation .hrx-ai-conversation-open {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hrx-ai-persona-settings {
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border: 1px solid #ffffff18;
+  border-radius: 9px;
+}
+.hrx-ai-persona-settings summary {
+  color: #aaa5b3;
+  font-size: 11px;
+  cursor: pointer;
+}
+.hrx-ai-persona-settings textarea {
+  width: 100%;
+  margin-top: 9px;
+  resize: vertical;
+  color: #eeeaf2;
+  border: 1px solid #ffffff22;
+  border-radius: 7px;
+  background: #101018;
+}
+.hrx-ai-vision-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #aaa5b3;
+  font-size: 11px;
+}
+.hrx-ai-vision-setting input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px;
+  color: #eeeaf2;
+  border: 1px solid #ffffff22;
+  border-radius: 6px;
+  background: #101018;
+}
+.hrx-ai-attach-button {
+  display: inline-flex;
+  width: fit-content;
+  padding: 7px 10px;
+  border: 1px solid #08d8e655;
+  border-radius: 7px;
+  color: #08d8e6;
+  cursor: pointer;
+  font-size: 10px;
+}
+.hrx-ai-attach-button input {
+  display: none;
+}
+.hrx-ai-attachment-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #bcb7c6;
+  font-size: 10px;
+}
+.hrx-ai-attachment-preview img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.hrx-ai-attachment-preview button {
+  border: 0;
+  color: #ff5477;
+  background: transparent;
+  cursor: pointer;
+}
+.hrx-ai-code-block {
+  margin: 10px 0;
+  overflow: hidden;
+  border: 1px solid #ffffff1a;
+  border-radius: 9px;
+  background: #08090e;
+}
+.hrx-ai-code-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #ffffff18;
+  color: #08d8e6;
+  font-size: 10px;
+}
+.hrx-ai-code-toolbar span {
+  margin-right: auto;
+  text-transform: uppercase;
+}
+.hrx-ai-code-toolbar button {
+  padding: 4px 7px;
+  border: 1px solid #ffffff20;
+  border-radius: 5px;
+  color: #ddd8e7;
+  background: #171722;
+  cursor: pointer;
+  font-size: 10px;
+}
+.hrx-ai-code-block pre {
+  max-height: 340px;
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+  color: #e2e0e8;
+  font:
+    12px/1.6 Consolas,
+    monospace;
+  white-space: pre-wrap;
+}
+.hrx-code-keyword {
+  color: #ff7d9b;
+}
+.hrx-code-string {
+  color: #a5e3a1;
+}
+.hrx-code-comment {
+  color: #858493;
+}
+.hrx-code-number {
+  color: #77c7ff;
+}
+.hrx-ai-code-block iframe {
+  width: 100%;
+  min-height: 220px;
+  border: 0;
+  background: #fff;
 }
 .hrx-ai-title-row {
   display: flex;
@@ -4294,7 +4490,13 @@ textarea:focus-visible {
   }
   .hrx-ai-shell {
     width: calc(100% - 20px);
+    grid-template-columns: 1fr;
+    gap: 10px;
     padding-top: 18px;
+  }
+  .hrx-ai-conversation-list {
+    max-height: 150px;
+    overflow: auto;
   }
   .hrx-ai-chat {
     padding: 13px;

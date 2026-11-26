@@ -13,7 +13,7 @@ import { mkdir, readFile, rename, writeFile } from 'fs/promises'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { join, resolve } from 'path'
+import { basename, join, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -25,6 +25,7 @@ const downloadSessions = new WeakSet()
 const googleAccountSessions = new WeakSet()
 const googleAccountTimers = new WeakMap()
 const extensionRestorePromises = new WeakMap()
+const hrxAiRequests = new Map()
 let hrxAiConversationWrite = Promise.resolve()
 let nextTabId = 1
 let previousCpuSample = null
@@ -1200,6 +1201,27 @@ app.whenReady().then(() => {
     return { ok: true, path: result.filePath }
   })
 
+  ipcMain.handle('browser:save-ai-code', async (event, value) => {
+    const mainWindow = getTrustedMainWindow(event)
+    if (!mainWindow || typeof value?.code !== 'string' || value.code.length > 500_000) {
+      return { ok: false, reason: 'invalid-code' }
+    }
+    const safeName = basename(String(value.name || 'hrx-code.txt').replace(/[<>:"|?*]/g, '_'))
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save generated code',
+      defaultPath: join(app.getPath('documents'), safeName),
+      filters: [
+        {
+          name: 'Code file',
+          extensions: ['html', 'js', 'jsx', 'ts', 'tsx', 'css', 'py', 'json', 'txt']
+        }
+      ]
+    })
+    if (result.canceled || !result.filePath) return { ok: false, reason: 'cancelled' }
+    await writeFile(result.filePath, value.code, 'utf8')
+    return { ok: true, path: result.filePath }
+  })
+
   ipcMain.handle('browser:open-google-oauth', async (event, value) => {
     if (!getTrustedMainWindow(event) || typeof value !== 'string') return { ok: false }
     try {
@@ -1352,13 +1374,33 @@ app.whenReady().then(() => {
     const model = typeof value?.model === 'string' ? value.model.slice(0, 80) : ''
     const messages = Array.isArray(value?.messages)
       ? value.messages.slice(-20).flatMap((item) => {
-          if (!['user', 'assistant'].includes(item?.role) || typeof item.content !== 'string')
+          if (
+            !['system', 'user', 'assistant'].includes(item?.role) ||
+            typeof item.content !== 'string'
+          )
             return []
           return [{ role: item.role, content: item.content.slice(0, 5000) }]
         })
       : []
+    const images = Array.isArray(value?.images)
+      ? value.images
+          .filter((image) => typeof image === 'string' && image.length <= 12_000_000)
+          .slice(0, 1)
+      : []
     if (!model || !messages.length)
       return { ok: false, reason: 'Choose a local model and enter a message.' }
+    if (images.length && !/(vision|llava|moondream|qwen.*vl|pixtral)/i.test(model)) {
+      return {
+        ok: false,
+        reason:
+          'Choose an installed vision model, or run `ollama pull llama3.2-vision` and select it.'
+      }
+    }
+    const requestId =
+      typeof value?.requestId === 'string' ? value.requestId.slice(0, 80) : randomUUID()
+    const requestKey = `${event.sender.id}:${requestId}`
+    const controller = new AbortController()
+    hrxAiRequests.set(requestKey, controller)
     const question = [...messages].reverse().find((item) => item.role === 'user')
     if (persistConversation && question) {
       await appendHrxAiConversation([
@@ -1366,16 +1408,45 @@ app.whenReady().then(() => {
       ]).catch(() => {})
     }
     try {
+      const requestMessages = messages.map((message) =>
+        images.length && message === question ? { ...message, images } : message
+      )
       const response = await fetch('http://127.0.0.1:11434/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model, messages, stream: false }),
-        signal: AbortSignal.timeout(120000)
+        body: JSON.stringify({ model, messages: requestMessages, stream: true }),
+        signal: controller.signal
       })
-      const data = await response.json().catch(() => ({}))
       if (!response.ok)
-        return { ok: false, reason: data.error || 'The local model could not answer.' }
-      const answer = data.message?.content || 'The model returned an empty answer.'
+        return {
+          ok: false,
+          reason: (await response.text()).slice(0, 400) || 'The local model could not answer.'
+        }
+      let answer = ''
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let pending = ''
+      while (true) {
+        const { value: chunk, done } = await reader.read()
+        pending += decoder.decode(chunk || new Uint8Array(), { stream: !done })
+        const lines = pending.split('\n')
+        pending = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const data = JSON.parse(line)
+          const token = data.message?.content || ''
+          if (!token) continue
+          answer += token
+          if (!event.sender.isDestroyed())
+            event.sender.send('browser:hrx-ai-stream', { requestId, token })
+        }
+        if (done) break
+      }
+      if (pending.trim()) {
+        const data = JSON.parse(pending)
+        answer += data.message?.content || ''
+      }
+      answer ||= 'The model returned an empty answer.'
       if (persistConversation) {
         await appendHrxAiConversation([
           { role: 'assistant', content: answer, model, createdAt: new Date().toISOString() }
@@ -1383,12 +1454,24 @@ app.whenReady().then(() => {
       }
       return { ok: true, answer }
     } catch {
+      if (controller.signal.aborted) return { ok: false, reason: 'Generation stopped.' }
       return {
         ok: false,
         reason:
           'Could not reach local AI. Check that Ollama is running and the selected model is installed.'
       }
+    } finally {
+      hrxAiRequests.delete(requestKey)
     }
+  })
+
+  ipcMain.handle('browser:hrx-ai-cancel', (event, requestId) => {
+    const mainWindow = getTrustedMainWindow(event)
+    if (!mainWindow || typeof requestId !== 'string') return false
+    const controller = hrxAiRequests.get(`${event.sender.id}:${requestId.slice(0, 80)}`)
+    if (!controller) return false
+    controller.abort()
+    return true
   })
 
   ipcMain.handle('browser:set-gaming-boost', (event, enabled) => {

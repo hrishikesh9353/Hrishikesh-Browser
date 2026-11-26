@@ -5,6 +5,7 @@ const api = {
   captureScreenshot: (options) => ipcRenderer.invoke('browser:capture-screenshot', options),
   saveRecording: (dataUrl) => ipcRenderer.invoke('browser:save-recording', { dataUrl }),
   saveScreenshotData: (dataUrl) => ipcRenderer.invoke('browser:save-screenshot-data', { dataUrl }),
+  saveAiCode: (name, code) => ipcRenderer.invoke('browser:save-ai-code', { name, code }),
   setWindowTitle: (title) => ipcRenderer.invoke('browser:set-window-title', title),
   getAppVersion: () => ipcRenderer.invoke('browser:get-app-version'),
   copyText: (text) => ipcRenderer.invoke('browser:copy-text', text),
@@ -24,7 +25,14 @@ const api = {
   setShaderEffect: (effect) => ipcRenderer.invoke('browser:set-shader-effect', effect),
   getHrxAiModels: () => ipcRenderer.invoke('browser:hrx-ai-models'),
   getHrxAiHistory: () => ipcRenderer.invoke('browser:hrx-ai-history'),
-  askHrxAi: (messages, model) => ipcRenderer.invoke('browser:hrx-ai-chat', { messages, model }),
+  askHrxAi: (messages, model, options = {}) =>
+    ipcRenderer.invoke('browser:hrx-ai-chat', { messages, model, ...options }),
+  cancelHrxAi: (requestId) => ipcRenderer.invoke('browser:hrx-ai-cancel', requestId),
+  onHrxAiStream: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('browser:hrx-ai-stream', listener)
+    return () => ipcRenderer.removeListener('browser:hrx-ai-stream', listener)
+  },
   toggleReaderMode: () => ipcRenderer.invoke('browser:toggle-reader-mode'),
   getTabProcesses: () => ipcRenderer.invoke('browser:get-tab-processes'),
   getCleanupStats: () => ipcRenderer.invoke('browser:get-cleanup-stats'),

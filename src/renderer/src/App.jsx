@@ -251,6 +251,95 @@ WebsiteFavicon.propTypes = {
   name: PropTypes.string.isRequired
 }
 
+function HrxAiResponse({ content }) {
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const parts = content.split(/```([\w+-]*)\s*\n([\s\S]*?)```/g)
+  const elements = []
+  for (let index = 0, codeIndex = 0; index < parts.length; index += 3, codeIndex += 1) {
+    if (parts[index]) elements.push(<p key={`text-${index}`}>{parts[index]}</p>)
+    if (index + 2 >= parts.length) continue
+    const language = parts[index + 1] || ''
+    const code = parts[index + 2]
+    const tokens = code.split(
+      /(\/\/[^\n]*|#[^\n]*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\b(?:const|let|var|function|return|if|else|class|new|async|await|import|from|export|def|print|for|while|true|false|null|undefined)\b|\b\d+(?:\.\d+)?\b)/g
+    )
+    elements.push(
+      <CodeBlock
+        key={`code-${codeIndex}`}
+        code={code}
+        language={language}
+        tokens={tokens}
+        previewOpen={previewOpen}
+        setPreviewOpen={setPreviewOpen}
+      />
+    )
+  }
+  return <div className="hrx-ai-response-content">{elements}</div>
+}
+
+function CodeBlock({ code, language, tokens, previewOpen, setPreviewOpen }) {
+  const preview =
+    language.toLowerCase() === 'html'
+      ? code
+      : `<script>${code.replace(/<\/script/gi, '<\\/script')}</script>`
+  return (
+    <div className="hrx-ai-code-block">
+      <div className="hrx-ai-code-toolbar">
+        <span>{language || 'code'}</span>
+        <button type="button" onClick={() => void navigator.clipboard.writeText(code)}>
+          Copy
+        </button>
+        <button
+          type="button"
+          onClick={() => void window.api.saveAiCode(`hrx-generated.${language || 'txt'}`, code)}
+        >
+          Save as file…
+        </button>
+        {['html', 'js', 'javascript'].includes(language.toLowerCase()) && (
+          <button type="button" onClick={() => setPreviewOpen((open) => !open)}>
+            {previewOpen ? 'Hide preview' : 'Run / Preview'}
+          </button>
+        )}
+      </div>
+      <pre>
+        <code>
+          {tokens.map((token, index) => {
+            let className = ''
+            if (/^(\/\/|#)/.test(token)) className = 'hrx-code-comment'
+            else if (/^("|'|`)/.test(token)) className = 'hrx-code-string'
+            else if (
+              /^(const|let|var|function|return|if|else|class|new|async|await|import|from|export|def|print|for|while)$/.test(
+                token
+              )
+            )
+              className = 'hrx-code-keyword'
+            else if (/^\d/.test(token)) className = 'hrx-code-number'
+            return className ? (
+              <span className={className} key={index}>
+                {token}
+              </span>
+            ) : (
+              token
+            )
+          })}
+        </code>
+      </pre>
+      {previewOpen && (
+        <iframe title="Sandboxed code preview" sandbox="allow-scripts" srcDoc={preview} />
+      )}
+    </div>
+  )
+}
+
+HrxAiResponse.propTypes = { content: PropTypes.string.isRequired }
+CodeBlock.propTypes = {
+  code: PropTypes.string.isRequired,
+  language: PropTypes.string.isRequired,
+  tokens: PropTypes.arrayOf(PropTypes.string).isRequired,
+  previewOpen: PropTypes.bool.isRequired,
+  setPreviewOpen: PropTypes.func.isRequired
+}
+
 function App() {
   const addressInputRef = useRef(null)
   const bookmarkImportRef = useRef(null)
@@ -312,6 +401,25 @@ function App() {
   const [hrxAiModels, setHrxAiModels] = useState([])
   const [hrxAiStatus, setHrxAiStatus] = useState('Checking local AI…')
   const [hrxAiMessages, setHrxAiMessages] = useState([])
+  const [hrxAiConversations, setHrxAiConversations] = useState(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem('hrx-ai-conversations') || '[]')
+      return Array.isArray(stored) ? stored : []
+    } catch {
+      return []
+    }
+  })
+  const [activeHrxAiConversationId, setActiveHrxAiConversationId] = useState(null)
+  const [hrxAiConversationSearch, setHrxAiConversationSearch] = useState('')
+  const [hrxAiSystemPrompt, setHrxAiSystemPrompt] = useState(
+    () => window.localStorage.getItem('hrx-ai-system-prompt') || ''
+  )
+  const [hrxAiVisionModel, setHrxAiVisionModel] = useState(
+    () => window.localStorage.getItem('hrx-ai-vision-model') || 'llama3.2-vision'
+  )
+  const [hrxAiPendingImage, setHrxAiPendingImage] = useState(null)
+  const [hrxAiAttachmentText, setHrxAiAttachmentText] = useState('')
+  const hrxAiStreamRequestRef = useRef(null)
   const [hrxAiInput, setHrxAiInput] = useState('')
   const [hrxAiBusy, setHrxAiBusy] = useState(false)
   const [hrxAiNotice, setHrxAiNotice] = useState('')
@@ -1268,6 +1376,24 @@ function App() {
     setModNotice('')
   }
 
+  useEffect(
+    () =>
+      window.api.onHrxAiStream((payload) => {
+        if (!payload || payload.requestId !== hrxAiStreamRequestRef.current) return
+        setHrxAiMessages((current) => {
+          const lastMessage = current[current.length - 1]
+          if (lastMessage?.role === 'assistant') {
+            return [
+              ...current.slice(0, -1),
+              { ...lastMessage, content: lastMessage.content + payload.token }
+            ]
+          }
+          return [...current, { role: 'assistant', content: payload.token }]
+        })
+      }),
+    []
+  )
+
   const openHrxAi = async () => {
     setBrowserMenuOpen(false)
     setBookmarkMenuOpen(false)
@@ -1276,6 +1402,10 @@ function App() {
     setHelpPageTabId(null)
     setModsPageTabId(null)
     setHrxAiPageTabId(activeTabId)
+    const savedActiveConversation = hrxAiConversations.find(
+      (conversation) => conversation.id === activeHrxAiConversationId
+    )
+    setHrxAiMessages(savedActiveConversation?.messages || [])
     setHrxAiNotice('')
     setHrxAiStatus('Checking local AI…')
     try {
@@ -1283,7 +1413,22 @@ function App() {
         window.api.getHrxAiModels(),
         window.api.getHrxAiHistory()
       ])
-      setHrxAiMessages(Array.isArray(savedMessages) ? savedMessages : [])
+      if (!hrxAiConversations.length && Array.isArray(savedMessages) && savedMessages.length) {
+        const id = crypto.randomUUID()
+        const migrated = [
+          {
+            id,
+            title: 'Previous chat',
+            messages: savedMessages,
+            updatedAt: 0,
+            pinned: false
+          }
+        ]
+        setHrxAiConversations(migrated)
+        setActiveHrxAiConversationId(id)
+        setHrxAiMessages(savedMessages)
+        window.localStorage.setItem('hrx-ai-conversations', JSON.stringify(migrated))
+      }
       if (result?.ok) {
         const models = result.models || []
         setHrxAiModels(models)
@@ -1303,30 +1448,105 @@ function App() {
     }
   }
 
+  const persistHrxAiConversation = (id, messages) => {
+    const prior = hrxAiConversations.find((item) => item.id === id)
+    const firstUserMessage = messages.find((message) => message.role === 'user')?.content || ''
+    const conversation = {
+      id,
+      title: prior?.title || firstUserMessage.slice(0, 48) || 'New chat',
+      messages,
+      updatedAt: Date.now(),
+      pinned: Boolean(prior?.pinned)
+    }
+    const next = [conversation, ...hrxAiConversations.filter((item) => item.id !== id)]
+    setHrxAiConversations(next)
+    window.localStorage.setItem('hrx-ai-conversations', JSON.stringify(next))
+    setActiveHrxAiConversationId(id)
+  }
+
+  const handleHrxAiAttachment = (file) => {
+    if (!file) return
+    if (file.size > 8 * 1024 * 1024) {
+      setHrxAiNotice('Files must be under 8 MB.')
+      return
+    }
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = () =>
+        setHrxAiPendingImage({
+          name: file.name,
+          base64: String(reader.result).split(',')[1] || '',
+          preview: String(reader.result)
+        })
+      reader.readAsDataURL(file)
+      setHrxAiNotice('')
+      return
+    }
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      setHrxAiNotice(
+        'PDF extraction is not available in this build. Attach TXT, Markdown, or code files instead.'
+      )
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setHrxAiAttachmentText(
+        `[Attached file: ${file.name}]\n${String(reader.result).slice(0, 80000)}`
+      )
+      setHrxAiNotice(`Attached ${file.name}. Its text will be sent to the selected local model.`)
+    }
+    reader.readAsText(file)
+  }
+
   const submitHrxAiMessage = async (event) => {
     event.preventDefault()
-    const content = hrxAiInput.trim()
+    const textContent = [hrxAiInput.trim(), hrxAiAttachmentText].filter(Boolean).join('\n\n')
+    const content =
+      textContent || (hrxAiPendingImage ? `Analyze this image: ${hrxAiPendingImage.name}` : '')
     if (!content || hrxAiBusy) return
-    if (!hrxAiModel) {
+    const selectedModel = hrxAiPendingImage
+      ? hrxAiModels.find((model) => model.toLowerCase().startsWith(hrxAiVisionModel.toLowerCase()))
+      : hrxAiModel
+    if (!selectedModel) {
+      if (hrxAiPendingImage) {
+        setHrxAiNotice(`Vision model not installed. Run: ollama pull ${hrxAiVisionModel}`)
+        return
+      }
       setHrxAiNotice('Install a local model in Ollama, then press Check connection.')
       return
     }
     const nextMessages = [...hrxAiMessages, { role: 'user', content }]
-    setHrxAiMessages(nextMessages)
+    setHrxAiMessages([...nextMessages, { role: 'assistant', content: '' }])
+    const conversationId = activeHrxAiConversationId || crypto.randomUUID()
+    persistHrxAiConversation(conversationId, nextMessages)
+    const requestId = crypto.randomUUID()
+    hrxAiStreamRequestRef.current = requestId
     setHrxAiInput('')
+    setHrxAiAttachmentText('')
     setHrxAiBusy(true)
     setHrxAiNotice('')
     try {
-      const result = await window.api.askHrxAi(nextMessages, hrxAiModel)
+      const requestMessages = hrxAiSystemPrompt.trim()
+        ? [{ role: 'system', content: hrxAiSystemPrompt.trim() }, ...nextMessages]
+        : nextMessages
+      const result = await window.api.askHrxAi(requestMessages, selectedModel, {
+        requestId,
+        images: hrxAiPendingImage ? [hrxAiPendingImage.base64] : []
+      })
       if (result?.ok) {
-        setHrxAiMessages([...nextMessages, { role: 'assistant', content: result.answer }])
+        const answeredMessages = [...nextMessages, { role: 'assistant', content: result.answer }]
+        setHrxAiMessages(answeredMessages)
+        persistHrxAiConversation(conversationId, answeredMessages)
       } else {
+        setHrxAiMessages(nextMessages)
         setHrxAiNotice(result?.reason || 'The local model could not answer.')
       }
     } catch {
       setHrxAiNotice('Could not reach the local model.')
     } finally {
+      hrxAiStreamRequestRef.current = null
       setHrxAiBusy(false)
+      setHrxAiPendingImage(null)
     }
   }
 
@@ -6030,123 +6250,312 @@ function App() {
               </button>
             </header>
             <div className="hrx-ai-shell">
-              <div className="hrx-ai-title-row">
-                <span className="hrx-ai-orbit">H</span>
-                <div>
-                  <span className="hrx-ai-eyebrow">YOUR ON-DEVICE ASSISTANT</span>
-                  <h1 id="hrx-ai-title">
-                    Hrishikesh <em>AI</em>
-                  </h1>
-                  <p>Private chat powered by a model running on this computer.</p>
-                </div>
-              </div>
-              {!hrxAiModels.length && (
-                <aside className="hrx-ai-connect-card">
-                  <div className="hrx-ai-connect-icon">⌁</div>
-                  <div>
-                    <strong>Connect your local AI engine</strong>
-                    <p>
-                      {hrxAiNotice ||
-                        'Hrishikesh AI needs Ollama and at least one model installed on this computer.'}
-                    </p>
-                    <small>
-                      After setup, return here and check the connection. Available local models will
-                      appear below.
-                    </small>
-                  </div>
-                  <button type="button" onClick={openHrxAi}>
-                    Check connection
-                  </button>
-                </aside>
-              )}
-              {hrxAiModels.length > 0 && (
-                <div className="hrx-ai-model-row">
-                  <label htmlFor="hrx-ai-model">LOCAL MODEL</label>
-                  <select
-                    id="hrx-ai-model"
-                    value={hrxAiModel}
-                    onChange={(event) => setHrxAiModel(event.target.value)}
+              <aside className="hrx-ai-conversation-list" aria-label="Saved conversations">
+                <div className="hrx-ai-conversation-heading">
+                  <strong>Conversations</strong>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveHrxAiConversationId(null)
+                      setHrxAiMessages([])
+                      setHrxAiNotice('')
+                    }}
                   >
-                    {hrxAiModels.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                  <span>Runs on this computer</span>
+                    ＋ New
+                  </button>
                 </div>
-              )}
-              <div className="hrx-ai-chat" aria-live="polite">
-                {hrxAiMessages.length === 0 ? (
-                  <div className="hrx-ai-welcome">
-                    <span>✳</span>
-                    <h2>What should we work on?</h2>
-                    <p>Ask a question, plan an idea, or get help with your browser.</p>
-                    <div>
-                      {[
-                        'Explain a browser feature',
-                        'Help me plan a project',
-                        'Summarize an idea'
-                      ].map((prompt) => (
-                        <button type="button" key={prompt} onClick={() => setHrxAiInput(prompt)}>
-                          {prompt}
-                          <b>↗</b>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  hrxAiMessages.map((message, index) => (
-                    <article
-                      className={`hrx-ai-message ${message.role}`}
-                      key={`${message.role}-${index}`}
-                    >
-                      <span>{message.role === 'user' ? 'YOU' : 'HRX AI'}</span>
-                      <p>{message.content}</p>
-                    </article>
-                  ))
-                )}
-                {hrxAiBusy && (
-                  <div className="hrx-ai-thinking">
-                    <i />
-                    <i />
-                    <i /> Hrishikesh AI is thinking…
-                  </div>
-                )}
-              </div>
-              {hrxAiNotice && hrxAiModels.length > 0 && (
-                <p className="hrx-ai-notice" role="status">
-                  {hrxAiNotice}
-                </p>
-              )}
-              <form className="hrx-ai-composer" onSubmit={submitHrxAiMessage}>
-                <textarea
-                  aria-label="Message Hrishikesh AI"
-                  value={hrxAiInput}
-                  onChange={(event) => setHrxAiInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault()
-                      event.currentTarget.form?.requestSubmit()
-                    }
-                  }}
-                  placeholder={
-                    hrxAiModels.length
-                      ? 'Message Hrishikesh AI…'
-                      : 'Connect local AI to start chatting'
-                  }
-                  disabled={!hrxAiModels.length || hrxAiBusy}
-                  rows={2}
+                <input
+                  aria-label="Search conversations"
+                  placeholder="Search chats"
+                  value={hrxAiConversationSearch}
+                  onChange={(event) => setHrxAiConversationSearch(event.target.value)}
                 />
-                <button
-                  type="submit"
-                  disabled={!hrxAiModels.length || !hrxAiInput.trim() || hrxAiBusy}
-                  aria-label="Send message"
+                {hrxAiConversations
+                  .filter((conversation) =>
+                    conversation.title.toLowerCase().includes(hrxAiConversationSearch.toLowerCase())
+                  )
+                  .sort(
+                    (left, right) =>
+                      Number(right.pinned) - Number(left.pinned) || right.updatedAt - left.updatedAt
+                  )
+                  .map((conversation) => (
+                    <div
+                      className={`hrx-ai-conversation${conversation.id === activeHrxAiConversationId ? ' active' : ''}`}
+                      key={conversation.id}
+                    >
+                      <button
+                        type="button"
+                        className="hrx-ai-conversation-open"
+                        onClick={() => {
+                          setActiveHrxAiConversationId(conversation.id)
+                          setHrxAiMessages(conversation.messages || [])
+                          setHrxAiNotice('')
+                        }}
+                        title={conversation.title}
+                      >
+                        {conversation.pinned ? '◆ ' : ''}
+                        {conversation.title}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Pin ${conversation.title}`}
+                        title="Pin"
+                        onClick={() => {
+                          const next = hrxAiConversations.map((item) =>
+                            item.id === conversation.id ? { ...item, pinned: !item.pinned } : item
+                          )
+                          setHrxAiConversations(next)
+                          window.localStorage.setItem('hrx-ai-conversations', JSON.stringify(next))
+                        }}
+                      >
+                        ⌖
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Rename ${conversation.title}`}
+                        title="Rename"
+                        onClick={() => {
+                          const title = window.prompt('Conversation name', conversation.title)
+                          if (title?.trim()) {
+                            const next = hrxAiConversations.map((item) =>
+                              item.id === conversation.id
+                                ? { ...item, title: title.trim().slice(0, 80) }
+                                : item
+                            )
+                            setHrxAiConversations(next)
+                            window.localStorage.setItem(
+                              'hrx-ai-conversations',
+                              JSON.stringify(next)
+                            )
+                          }
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${conversation.title}`}
+                        title="Delete"
+                        onClick={() => {
+                          if (window.confirm(`Delete “${conversation.title}”?`)) {
+                            const next = hrxAiConversations.filter(
+                              (item) => item.id !== conversation.id
+                            )
+                            setHrxAiConversations(next)
+                            window.localStorage.setItem(
+                              'hrx-ai-conversations',
+                              JSON.stringify(next)
+                            )
+                            if (activeHrxAiConversationId === conversation.id) {
+                              setActiveHrxAiConversationId(null)
+                              setHrxAiMessages([])
+                            }
+                          }
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+              </aside>
+              <div className="hrx-ai-main">
+                <div className="hrx-ai-title-row">
+                  <span className="hrx-ai-orbit">H</span>
+                  <div>
+                    <span className="hrx-ai-eyebrow">YOUR ON-DEVICE ASSISTANT</span>
+                    <h1 id="hrx-ai-title">
+                      Hrishikesh <em>AI</em>
+                    </h1>
+                    <p>Private chat powered by a model running on this computer.</p>
+                  </div>
+                </div>
+                {!hrxAiModels.length && (
+                  <aside className="hrx-ai-connect-card">
+                    <div className="hrx-ai-connect-icon">⌁</div>
+                    <div>
+                      <strong>Connect your local AI engine</strong>
+                      <p>
+                        {hrxAiNotice ||
+                          'Hrishikesh AI needs Ollama and at least one model installed on this computer.'}
+                      </p>
+                      <small>
+                        After setup, return here and check the connection. Available local models
+                        will appear below.
+                      </small>
+                    </div>
+                    <button type="button" onClick={openHrxAi}>
+                      Check connection
+                    </button>
+                  </aside>
+                )}
+                {hrxAiModels.length > 0 && (
+                  <div className="hrx-ai-model-row">
+                    <label htmlFor="hrx-ai-model">LOCAL MODEL</label>
+                    <select
+                      id="hrx-ai-model"
+                      value={hrxAiModel}
+                      onChange={(event) => setHrxAiModel(event.target.value)}
+                    >
+                      {hrxAiModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                    <span>Runs on this computer</span>
+                  </div>
+                )}
+                <details className="hrx-ai-persona-settings">
+                  <summary>Persona & system prompt</summary>
+                  <textarea
+                    value={hrxAiSystemPrompt}
+                    onChange={(event) => {
+                      setHrxAiSystemPrompt(event.target.value)
+                      window.localStorage.setItem('hrx-ai-system-prompt', event.target.value)
+                    }}
+                    placeholder="Set optional instructions for this local assistant"
+                    rows={3}
+                  />
+                  <label className="hrx-ai-vision-setting">
+                    Vision model
+                    <input
+                      value={hrxAiVisionModel}
+                      onChange={(event) => {
+                        setHrxAiVisionModel(event.target.value)
+                        window.localStorage.setItem('hrx-ai-vision-model', event.target.value)
+                      }}
+                      placeholder="llama3.2-vision"
+                    />
+                  </label>
+                </details>
+                <div
+                  className="hrx-ai-chat"
+                  aria-live="polite"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    handleHrxAiAttachment(event.dataTransfer.files?.[0])
+                  }}
                 >
-                  ↑
-                </button>
-                <small>Chats save on this device and go only to your local model.</small>
-              </form>
+                  {hrxAiMessages.length === 0 ? (
+                    <div className="hrx-ai-welcome">
+                      <span>✳</span>
+                      <h2>What should we work on?</h2>
+                      <p>Ask a question, plan an idea, or get help with your browser.</p>
+                      <div>
+                        {[
+                          'Explain a browser feature',
+                          'Help me plan a project',
+                          'Summarize an idea'
+                        ].map((prompt) => (
+                          <button type="button" key={prompt} onClick={() => setHrxAiInput(prompt)}>
+                            {prompt}
+                            <b>↗</b>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    hrxAiMessages.map((message, index) => (
+                      <article
+                        className={`hrx-ai-message ${message.role}`}
+                        key={`${message.role}-${index}`}
+                      >
+                        <span>{message.role === 'user' ? 'YOU' : 'HRX AI'}</span>
+                        {message.role === 'assistant' ? (
+                          <HrxAiResponse content={message.content} />
+                        ) : (
+                          <p>{message.content}</p>
+                        )}
+                      </article>
+                    ))
+                  )}
+                  {hrxAiBusy && (
+                    <div className="hrx-ai-thinking">
+                      <i />
+                      <i />
+                      <i /> Hrishikesh AI is thinking…
+                    </div>
+                  )}
+                </div>
+                {hrxAiNotice && hrxAiModels.length > 0 && (
+                  <p className="hrx-ai-notice" role="status">
+                    {hrxAiNotice}
+                  </p>
+                )}
+                <form className="hrx-ai-composer" onSubmit={submitHrxAiMessage}>
+                  <textarea
+                    aria-label="Message Hrishikesh AI"
+                    value={hrxAiInput}
+                    onChange={(event) => setHrxAiInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault()
+                        event.currentTarget.form?.requestSubmit()
+                      }
+                    }}
+                    onPaste={(event) => {
+                      const imageFile = Array.from(event.clipboardData.files || []).find((file) =>
+                        file.type.startsWith('image/')
+                      )
+                      if (imageFile) {
+                        event.preventDefault()
+                        handleHrxAiAttachment(imageFile)
+                      }
+                    }}
+                    placeholder={
+                      hrxAiModels.length
+                        ? 'Message Hrishikesh AI…'
+                        : 'Connect local AI to start chatting'
+                    }
+                    disabled={!hrxAiModels.length || hrxAiBusy}
+                    rows={2}
+                  />
+                  <label className="hrx-ai-attach-button">
+                    Attach image / text
+                    <input
+                      type="file"
+                      accept="image/*,.txt,.md,.js,.jsx,.ts,.tsx,.json,.css,.html,.py,.pdf"
+                      onChange={(event) => {
+                        handleHrxAiAttachment(event.target.files?.[0])
+                        event.target.value = ''
+                      }}
+                    />
+                  </label>
+                  {hrxAiPendingImage && (
+                    <span className="hrx-ai-attachment-preview">
+                      <img src={hrxAiPendingImage.preview} alt="Image to analyze" />
+                      {hrxAiPendingImage.name}
+                      <button type="button" onClick={() => setHrxAiPendingImage(null)}>
+                        Remove
+                      </button>
+                    </span>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={
+                      !hrxAiModels.length ||
+                      (!hrxAiInput.trim() && !hrxAiAttachmentText && !hrxAiPendingImage) ||
+                      hrxAiBusy
+                    }
+                    aria-label="Send message"
+                  >
+                    ↑
+                  </button>
+                  {hrxAiBusy && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (hrxAiStreamRequestRef.current)
+                          void window.api.cancelHrxAi(hrxAiStreamRequestRef.current)
+                      }}
+                    >
+                      Stop
+                    </button>
+                  )}
+                  <small>Chats save on this device and go only to your local model.</small>
+                </form>
+              </div>
             </div>
           </section>
         )}
