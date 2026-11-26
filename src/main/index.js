@@ -1124,6 +1124,82 @@ app.whenReady().then(() => {
     return mainWindow ? getWindowState(mainWindow) : null
   })
 
+  ipcMain.handle('browser:capture-screenshot', async (event, options = {}) => {
+    const mainWindow = getTrustedMainWindow(event)
+    if (!mainWindow || !['tab', 'screen', 'app'].includes(options?.source)) {
+      return { ok: false, reason: 'invalid-request' }
+    }
+    try {
+      let image
+      if (options.source === 'screen') {
+        const { desktopCapturer, screen } = await import('electron')
+        const display = screen.getPrimaryDisplay()
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: display.size.width, height: display.size.height }
+        })
+        image = sources.find((source) => source.display_id === String(display.id))?.thumbnail
+        if (!image || image.isEmpty()) return { ok: false, reason: 'screen-unavailable' }
+      } else if (options.source === 'tab') {
+        const tab = getActiveTab(mainWindow)
+        if (!tab?.view || tab.showingHome) return { ok: false, reason: 'no-active-page' }
+        image = await tab.view.webContents.capturePage()
+      } else {
+        image = await mainWindow.webContents.capturePage()
+      }
+      const dataUrl = image.toDataURL()
+      if (options.copy === true) clipboard.writeImage(image)
+      if (options.save === true) {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: 'Save Hrishikesh screenshot',
+          defaultPath: join(app.getPath('pictures'), `Hrishikesh-${Date.now()}.png`),
+          filters: [{ name: 'PNG image', extensions: ['png'] }]
+        })
+        if (result.canceled || !result.filePath) return { ok: false, reason: 'cancelled' }
+        await writeFile(result.filePath, image.toPNG())
+        return { ok: true, path: result.filePath, dataUrl }
+      }
+      return { ok: true, dataUrl }
+    } catch (error) {
+      console.error('[Hrishikesh] Screenshot failed', error)
+      return { ok: false, reason: 'capture-failed' }
+    }
+  })
+
+  ipcMain.handle('browser:save-recording', async (event, value) => {
+    const mainWindow = getTrustedMainWindow(event)
+    if (!mainWindow || typeof value?.dataUrl !== 'string' || value.dataUrl.length > 500_000_000) {
+      return { ok: false, reason: 'invalid-recording' }
+    }
+    const match = value.dataUrl.match(/^data:video\/webm;base64,([A-Za-z0-9+/=]+)$/)
+    if (!match) return { ok: false, reason: 'invalid-recording' }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Hrishikesh screen recording',
+      defaultPath: join(app.getPath('videos'), `Hrishikesh-${Date.now()}.webm`),
+      filters: [{ name: 'WebM video', extensions: ['webm'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false, reason: 'cancelled' }
+    await writeFile(result.filePath, Buffer.from(match[1], 'base64'))
+    return { ok: true, path: result.filePath }
+  })
+
+  ipcMain.handle('browser:save-screenshot-data', async (event, value) => {
+    const mainWindow = getTrustedMainWindow(event)
+    if (!mainWindow || typeof value?.dataUrl !== 'string' || value.dataUrl.length > 80_000_000) {
+      return { ok: false, reason: 'invalid-image' }
+    }
+    const match = value.dataUrl.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/)
+    if (!match) return { ok: false, reason: 'invalid-image' }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Hrishikesh screenshot',
+      defaultPath: join(app.getPath('pictures'), `Hrishikesh-${Date.now()}.png`),
+      filters: [{ name: 'PNG image', extensions: ['png'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false, reason: 'cancelled' }
+    await writeFile(result.filePath, Buffer.from(match[1], 'base64'))
+    return { ok: true, path: result.filePath }
+  })
+
   ipcMain.handle('browser:open-google-oauth', async (event, value) => {
     if (!getTrustedMainWindow(event) || typeof value !== 'string') return { ok: false }
     try {

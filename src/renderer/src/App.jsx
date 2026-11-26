@@ -277,6 +277,27 @@ function App() {
   const [hoveredBrowserMenuView, setHoveredBrowserMenuView] = useState('')
   const [hoveredBrowserMenuTop, setHoveredBrowserMenuTop] = useState(0)
   const [browserNotice, setBrowserNotice] = useState('')
+  const [capturePanelOpen, setCapturePanelOpen] = useState(false)
+  const [captureEnabled, setCaptureEnabled] = useState(
+    () => window.localStorage.getItem('hrx-capture-enabled') !== 'off'
+  )
+  const [recordingEnabled, setRecordingEnabled] = useState(
+    () => window.localStorage.getItem('hrx-recording-enabled') !== 'off'
+  )
+  const [captureImage, setCaptureImage] = useState('')
+  const [captureSource, setCaptureSource] = useState('tab')
+  const [captureMessage, setCaptureMessage] = useState('')
+  const [captureSystemAudio, setCaptureSystemAudio] = useState(false)
+  const [captureMicrophone, setCaptureMicrophone] = useState(false)
+  const [recordingPaused, setRecordingPaused] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [captureSelection, setCaptureSelection] = useState(null)
+  const [captureSelectionStart, setCaptureSelectionStart] = useState(null)
+  const screenRecorderRef = useRef(null)
+  const screenRecorderChunksRef = useRef([])
+  const screenRecorderStreamsRef = useRef([])
+  const recordingStartedAtRef = useRef(0)
   const [homeAppsOpen, setHomeAppsOpen] = useState(false)
   const [homeProfileOpen, setHomeProfileOpen] = useState(false)
   const [googleSignedIn, setGoogleSignedIn] = useState(false)
@@ -1309,6 +1330,189 @@ function App() {
     }
   }
 
+  const captureScreenImage = useCallback(async (source, selectArea = false) => {
+    setCaptureMessage('Capturing…')
+    setCaptureSelection(null)
+    setCaptureSource(source)
+    const result = await window.api.captureScreenshot({ source })
+    if (!result?.ok || !result.dataUrl) {
+      setCaptureMessage(
+        result?.reason === 'no-active-page'
+          ? 'Open a website tab first to capture the current tab.'
+          : 'Capture failed. Check that the requested source is available.'
+      )
+      return
+    }
+    setCaptureImage(result.dataUrl)
+    setCaptureMessage(
+      selectArea
+        ? 'Drag over the image to select an area, then save or copy it.'
+        : 'Screenshot ready.'
+    )
+  }, [])
+
+  const saveCaptureImage = async (copy = false) => {
+    if (!captureImage) return
+    let dataUrl = captureImage
+    if (captureSelection) {
+      const image = new Image()
+      image.src = captureImage
+      await new Promise((resolve) => {
+        image.onload = resolve
+      })
+      const scaleX = image.naturalWidth / captureSelection.displayWidth
+      const scaleY = image.naturalHeight / captureSelection.displayHeight
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(captureSelection.width * scaleX))
+      canvas.height = Math.max(1, Math.round(captureSelection.height * scaleY))
+      canvas
+        .getContext('2d')
+        .drawImage(
+          image,
+          Math.round(captureSelection.x * scaleX),
+          Math.round(captureSelection.y * scaleY),
+          canvas.width,
+          canvas.height,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        )
+      dataUrl = canvas.toDataURL('image/png')
+    }
+    if (copy) {
+      if (captureSelection) {
+        setCaptureMessage('Copying a selected crop is not supported yet. Use Save selected area.')
+        return
+      }
+      const result = await window.api.captureScreenshot({ source: captureSource, copy: true })
+      setCaptureMessage(
+        result?.ok ? 'Screenshot copied to clipboard.' : 'Could not copy screenshot.'
+      )
+      return
+    }
+    const result = captureSelection
+      ? await window.api.saveScreenshotData(dataUrl)
+      : await window.api.captureScreenshot({ source: captureSource, save: true })
+    setCaptureMessage(result?.ok ? `Saved: ${result.path}` : 'Screenshot save cancelled or failed.')
+  }
+
+  const startScreenRecording = useCallback(async () => {
+    if (!recordingEnabled) return
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: captureSystemAudio
+      })
+      screenRecorderStreamsRef.current = [displayStream]
+      const audioTracks = [...displayStream.getAudioTracks()]
+      if (captureMicrophone) {
+        const microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        screenRecorderStreamsRef.current.push(microphoneStream)
+        audioTracks.push(...microphoneStream.getAudioTracks())
+      }
+      const combinedStream = new MediaStream([...displayStream.getVideoTracks(), ...audioTracks])
+      const recorder = MediaRecorder.isTypeSupported('video/webm')
+        ? new MediaRecorder(combinedStream, { mimeType: 'video/webm' })
+        : new MediaRecorder(combinedStream)
+      screenRecorderRef.current = recorder
+      screenRecorderChunksRef.current = []
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) screenRecorderChunksRef.current.push(event.data)
+      }
+      recorder.onstop = async () => {
+        const blob = new Blob(screenRecorderChunksRef.current, { type: 'video/webm' })
+        const reader = new FileReader()
+        reader.onload = async () => {
+          const result = await window.api.saveRecording(reader.result)
+          setCaptureMessage(
+            result?.ok ? `Recording saved: ${result.path}` : 'Recording save cancelled or failed.'
+          )
+        }
+        reader.readAsDataURL(blob)
+        screenRecorderStreamsRef.current.forEach((stream) =>
+          stream.getTracks().forEach((track) => track.stop())
+        )
+        screenRecorderStreamsRef.current = []
+        screenRecorderRef.current = null
+        setIsRecording(false)
+        setRecordingPaused(false)
+        setRecordingSeconds(0)
+      }
+      displayStream.getVideoTracks()[0].addEventListener('ended', () => {
+        if (recorder.state !== 'inactive') recorder.stop()
+      })
+      recorder.start(500)
+      setIsRecording(true)
+      recordingStartedAtRef.current = Date.now()
+      setRecordingSeconds(0)
+      setRecordingPaused(false)
+      setCaptureMessage(
+        captureSystemAudio && !displayStream.getAudioTracks().length
+          ? 'Recording active. This source did not provide system audio; video and mic settings continue.'
+          : 'Recording active. The operating system may exclude protected content.'
+      )
+    } catch (error) {
+      setCaptureMessage(
+        error?.name === 'NotAllowedError'
+          ? 'Screen capture permission was declined.'
+          : 'Recording is unavailable on this device or permission was denied.'
+      )
+    }
+  }, [recordingEnabled, captureSystemAudio, captureMicrophone])
+
+  const stopScreenRecording = useCallback(() => {
+    const recorder = screenRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+  }, [])
+
+  const toggleScreenRecordingPause = () => {
+    const recorder = screenRecorderRef.current
+    if (!recorder) return
+    if (recorder.state === 'recording') {
+      recorder.pause()
+      setRecordingPaused(true)
+    } else if (recorder.state === 'paused') {
+      recorder.resume()
+      setRecordingPaused(false)
+    }
+  }
+
+  useEffect(() => {
+    const shortcutHandler = (event) => {
+      if (!event.ctrlKey || !event.shiftKey) return
+      if (event.key.toLowerCase() === 's' && captureEnabled) {
+        event.preventDefault()
+        void captureScreenImage(currentUrl ? 'tab' : 'app')
+        setCapturePanelOpen(true)
+      } else if (event.key.toLowerCase() === 'r' && recordingEnabled) {
+        event.preventDefault()
+        if (screenRecorderRef.current) stopScreenRecording()
+        else {
+          setCapturePanelOpen(true)
+          void startScreenRecording()
+        }
+      }
+    }
+    window.addEventListener('keydown', shortcutHandler)
+    return () => window.removeEventListener('keydown', shortcutHandler)
+  }, [
+    captureEnabled,
+    recordingEnabled,
+    currentUrl,
+    captureScreenImage,
+    stopScreenRecording,
+    startScreenRecording
+  ])
+
+  useEffect(() => {
+    if (!isRecording || recordingPaused) return undefined
+    const timer = window.setInterval(() => {
+      setRecordingSeconds(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000))
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [isRecording, recordingPaused])
+
   const playModSound = () => {
     if (!modsSoundEnabled) return
     try {
@@ -1864,6 +2068,15 @@ function App() {
         </div>
         <button className="toolbar-go" type="button" onClick={() => navigate(addressQuery)}>
           Go
+        </button>
+        <button
+          className="toolbar-capture"
+          type="button"
+          aria-label="Screenshot and screen recorder"
+          title="Screenshot and screen recorder (Ctrl+Shift+S)"
+          onClick={() => setCapturePanelOpen((open) => !open)}
+        >
+          ◉
         </button>
         <div className="bookmark-area">
           <button
@@ -5936,6 +6149,204 @@ function App() {
               </form>
             </div>
           </section>
+        )}
+        {capturePanelOpen && (
+          <div
+            className="capture-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setCapturePanelOpen(false)
+            }}
+          >
+            <section
+              className="capture-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Screenshot and screen recorder"
+            >
+              <header>
+                <div>
+                  <small>HRX MEDIA TOOLS</small>
+                  <h2>Capture & record</h2>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close capture panel"
+                  onClick={() => setCapturePanelOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <div className="capture-options">
+                <button
+                  type="button"
+                  disabled={!captureEnabled}
+                  onClick={() => captureScreenImage('screen')}
+                >
+                  Full screen
+                </button>
+                <button
+                  type="button"
+                  disabled={!captureEnabled || !currentUrl}
+                  onClick={() => captureScreenImage('tab')}
+                >
+                  Current tab
+                </button>
+                <button
+                  type="button"
+                  disabled={!captureEnabled || !currentUrl}
+                  onClick={() => captureScreenImage('tab', true)}
+                >
+                  Select area
+                </button>
+                <button
+                  type="button"
+                  disabled={!captureEnabled}
+                  onClick={() => captureScreenImage('app')}
+                >
+                  Hrishikesh window
+                </button>
+              </div>
+              {captureImage && (
+                <div className="capture-preview-wrap">
+                  <img
+                    src={captureImage}
+                    alt="Screenshot preview; drag to choose a crop"
+                    onPointerDown={(event) => {
+                      if (!captureSelectionStart) {
+                        event.currentTarget.setPointerCapture(event.pointerId)
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setCaptureSelectionStart({
+                          x: event.clientX - rect.left,
+                          y: event.clientY - rect.top,
+                          displayWidth: rect.width,
+                          displayHeight: rect.height
+                        })
+                        setCaptureSelection(null)
+                      }
+                    }}
+                    onPointerUp={(event) => {
+                      if (!captureSelectionStart) return
+                      const rect = event.currentTarget.getBoundingClientRect()
+                      const endX = event.clientX - rect.left
+                      const endY = event.clientY - rect.top
+                      const x = Math.min(captureSelectionStart.x, endX)
+                      const y = Math.min(captureSelectionStart.y, endY)
+                      const width = Math.abs(endX - captureSelectionStart.x)
+                      const height = Math.abs(endY - captureSelectionStart.y)
+                      if (width > 8 && height > 8)
+                        setCaptureSelection({
+                          x,
+                          y,
+                          width,
+                          height,
+                          displayWidth: rect.width,
+                          displayHeight: rect.height
+                        })
+                      setCaptureSelectionStart(null)
+                    }}
+                  />
+                  {captureSelection && (
+                    <div
+                      className="capture-crop-box"
+                      style={{
+                        left: `${captureSelection.x}px`,
+                        top: `${captureSelection.y}px`,
+                        width: `${captureSelection.width}px`,
+                        height: `${captureSelection.height}px`
+                      }}
+                    />
+                  )}
+                  <div className="capture-actions">
+                    <button type="button" onClick={() => void saveCaptureImage(false)}>
+                      Save PNG…
+                    </button>
+                    <button type="button" onClick={() => void saveCaptureImage(true)}>
+                      Copy to clipboard
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="capture-options capture-recorder-options">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={captureSystemAudio}
+                    onChange={(event) => setCaptureSystemAudio(event.target.checked)}
+                  />{' '}
+                  System audio
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={captureMicrophone}
+                    onChange={(event) => setCaptureMicrophone(event.target.checked)}
+                  />{' '}
+                  Microphone
+                </label>
+                <button
+                  type="button"
+                  disabled={!recordingEnabled || isRecording}
+                  onClick={() => void startScreenRecording()}
+                >
+                  ● Start WebM
+                </button>
+                <button type="button" disabled={!isRecording} onClick={toggleScreenRecordingPause}>
+                  {recordingPaused ? 'Resume' : 'Pause'}
+                </button>
+                <button type="button" disabled={!isRecording} onClick={stopScreenRecording}>
+                  Stop & save
+                </button>
+                <span className={isRecording ? 'capture-live' : ''}>
+                  {isRecording
+                    ? `REC ${String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:${String(recordingSeconds % 60).padStart(2, '0')}`
+                    : 'MP4 unavailable; WebM is supported here'}
+                </span>
+              </div>
+              <details className="capture-settings">
+                <summary>Settings · shortcuts</summary>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={captureEnabled}
+                    onChange={(event) => {
+                      setCaptureEnabled(event.target.checked)
+                      window.localStorage.setItem(
+                        'hrx-capture-enabled',
+                        event.target.checked ? 'on' : 'off'
+                      )
+                    }}
+                  />{' '}
+                  Screenshots on · Ctrl+Shift+S
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={recordingEnabled}
+                    onChange={(event) => {
+                      setRecordingEnabled(event.target.checked)
+                      window.localStorage.setItem(
+                        'hrx-recording-enabled',
+                        event.target.checked ? 'on' : 'off'
+                      )
+                    }}
+                  />{' '}
+                  Recorder on · Ctrl+Shift+R
+                </label>
+              </details>
+              <p className="capture-disclaimer">
+                The operating system screen picker controls what can be recorded. The current Screen
+                Shield badge does not configure native capture protection; some protected video may
+                appear black. Save dialogs let you choose a folder and filename. Clipboard copy is
+                available for full screenshots; crop-to-clipboard is not yet supported.
+              </p>
+              {captureMessage && (
+                <p className="capture-message" role="status">
+                  {captureMessage}
+                </p>
+              )}
+            </section>
+          </div>
         )}
         <footer className="home-footer">
           <span>MADE BY HRISHIKESH</span>

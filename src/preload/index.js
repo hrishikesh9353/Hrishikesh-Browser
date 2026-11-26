@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
   getState: () => ipcRenderer.invoke('browser:get-state'),
+  captureScreenshot: (options) => ipcRenderer.invoke('browser:capture-screenshot', options),
+  saveRecording: (dataUrl) => ipcRenderer.invoke('browser:save-recording', { dataUrl }),
+  saveScreenshotData: (dataUrl) => ipcRenderer.invoke('browser:save-screenshot-data', { dataUrl }),
   setWindowTitle: (title) => ipcRenderer.invoke('browser:set-window-title', title),
   getAppVersion: () => ipcRenderer.invoke('browser:get-app-version'),
   copyText: (text) => ipcRenderer.invoke('browser:copy-text', text),
